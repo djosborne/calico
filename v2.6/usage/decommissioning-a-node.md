@@ -10,6 +10,9 @@ redirect_from: latest/usage/decommissioning-a-node
 - You are renaming a Node.
 - You are receiving an error about an IP address already in use.
 - Hosts are regularly added and removed from your cluster.
+- You are not running Calico in Kubernetes-Datastore Mode, which automatically
+handles **node** deletion.
+- You are **not** running [the kube-controllers node controller]({{site.baseurl}}/{{page.version}}/reference/kube-controllers/configuration) v1.0.1+, which automatically handles node deletion.
 
 ### Purpose of this page
 
