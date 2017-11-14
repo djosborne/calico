@@ -12,10 +12,10 @@ section.
 
 The `calico/kube-controllers` container includes the following controllers:
 
-1. policy controller: watches network policies and programs Calico policies.
-1. profile controller: watches namespaces and programs Calico profiles.
-1. workloadendpoint controller: watches for changes to pod labels and updates Calico workload endpoints.
-1. node controller: watches for the removal of Kubernetes nodes and removes corresponding data from Calico.
+- policy controller: watches network policies and programs Calico policies.
+- profile controller: watches namespaces and programs Calico profiles.
+- workloadendpoint controller: watches for changes to pod labels and updates Calico workload endpoints.
+- node controller: watches for the removal of Kubernetes nodes and removes corresponding data from Calico.
 
 By default, all four controllers are enabled.
 
