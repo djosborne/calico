@@ -1,6 +1,6 @@
 ---
 title:  Manual Installation of Calico with rkt
-redirect_from: latest/getting-started/rkt/installation/manual
+canonical_url: 'https://docs.projectcalico.org/v2.6/getting-started/rkt/installation/manual'
 ---
 
 This tutorial describes how to manually configure a working environment for

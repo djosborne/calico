@@ -1,9 +1,10 @@
 ---
 title: Calico System Requirements
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/requirements'
 ---
 
-Depending on the Calico functionality you are using, there are some requirements your system needs to meet in order for Calico to work properly.
-calico/node container image ships with the following `ip6tables`, `ipset`, `iputils`, `iproute2`, `conntrack-tools`.
+Depending on the {{site.prodname}} functionality you are using, there are some requirements your system needs to meet in order for {{site.prodname}} to work properly.
+`{{site.nodecontainer}}` container image ships with the following `ip6tables`, `ipset`, `iputils`, `iproute2`, `conntrack-tools`.
 
 ## Minumum Linux kernel versions
 
@@ -11,7 +12,7 @@ IPv4 only: `2.6.32`
 
 IPv6: `3.10`
 
-## Requirements for Calico Policy:
+## Requirements for {{site.prodname}} Policy:
 
 ### iproute2
  
@@ -105,7 +106,7 @@ This is included in kernel version `2.6.18` and above.
 
 `ipt_REJECT`: Kernel module to reject packets.
 
-## Requirements for Calico Networking:
+## Requirements for {{site.prodname}} Networking:
  
 ### IP-in-IP Tunneling
 

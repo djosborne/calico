@@ -2,14 +2,14 @@
 layout: null
 ---
 # Calico Version {{site.data.versions[page.version].first.title}}
-# http://docs.projectcalico.org/{{page.version}}/releases#{{site.data.versions[page.version].first.title}}
+# https://docs.projectcalico.org/{{page.version}}/releases#{{site.data.versions[page.version].first.title}}
 
 ---
+
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
-  name: calico-policy-controller
-  namespace: kube-system
+  name: calico-kube-controllers
 rules:
   - apiGroups:
     - ""
@@ -18,6 +18,14 @@ rules:
       - pods
       - namespaces
       - networkpolicies
+      - nodes
+    verbs:
+      - watch
+      - list
+  - apiGroups:
+    - networking.k8s.io
+    resources:
+      - networkpolicies
     verbs:
       - watch
       - list
@@ -25,21 +33,22 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
-  name: calico-policy-controller
+  name: calico-kube-controllers
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: calico-policy-controller
+  name: calico-kube-controllers
 subjects:
 - kind: ServiceAccount
-  name: calico-policy-controller
+  name: calico-kube-controllers
   namespace: kube-system
+
 ---
+
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: calico-node
-  namespace: kube-system
 rules:
   - apiGroups: [""]
     resources:
@@ -47,7 +56,9 @@ rules:
       - nodes
     verbs:
       - get
+
 ---
+
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding
 metadata:

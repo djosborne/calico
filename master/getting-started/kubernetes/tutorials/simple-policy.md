@@ -1,5 +1,6 @@
 ---
 title: Simple Policy Demo
+canonical_url: 'https://docs.projectcalico.org/v3.0/getting-started/kubernetes/tutorials/simple-policy'
 ---
 
 This guide provides a simple way to try out Kubernetes NetworkPolicy with Calico.  It requires a Kubernetes cluster configured with Calico networking, and expects that you have `kubectl` configured to interact with the cluster.
@@ -51,12 +52,13 @@ Running the following command creates a NetworkPolicy which implements a default
 ```
 kubectl create -f - <<EOF
 kind: NetworkPolicy
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 metadata:
   name: default-deny
   namespace: policy-demo
 spec:
   podSelector:
+    matchLabels: {}
 EOF
 ```
 
@@ -88,7 +90,7 @@ Create a network policy `access-nginx` with the following contents:
 ```
 kubectl create -f - <<EOF
 kind: NetworkPolicy
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 metadata:
   name: access-nginx
   namespace: policy-demo
@@ -104,8 +106,11 @@ spec:
 EOF
 ```
 
-> Notice the NetworkPolicy allows traffic from Pods with the label `run: access` to Pods with the label `run: nginx`.  These are the labels automatically added to Pods started via `kubectl run` based on the name of the `Deployment`.
-
+> **Note**: The NetworkPolicy allows traffic from Pods with 
+> the label `run: access` to Pods with the label `run: nginx`. These 
+> are the labels automatically added to Pods started via `kubectl run` 
+> based on the name of the `Deployment`.
+{: .alert .alert-info}
 
 We should now be able to access the Service from the `access` Pod.
 

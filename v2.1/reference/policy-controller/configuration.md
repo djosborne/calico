@@ -1,5 +1,6 @@
 ---
 title: Configuring the Calico policy controller 
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/kube-controllers/configuration'
 ---
 
 The policy controller is primarily configured through environment variables.  When running
@@ -57,7 +58,7 @@ will always be running without need for leader election.
 ### Kubernetes API access
 
 The leader election container also needs Kubernetes API access, which can be configured through a `kubeconfig` file placed in 
-the root directory of the container. This can be done by mounting a file from the host, or using Kubernetes [ConfigMap resources](http://kubernetes.io/docs/user-guide/configmap/).
+the root directory of the container. This can be done by mounting a file from the host, or using Kubernetes [ConfigMap resources](https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/).
 
 ### Other configuration
 

@@ -1,12 +1,13 @@
 ---
 title: Using etcd RBAC to segment Kubernetes and Calico
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/advanced/etcd-rbac/kubernetes'
 ---
 
 When using etcd with RBAC, all components that access etcd must be configured
-with the proper certificates.  This document describes the users and roles
-needed to segment etcd so that Kubernetes and Calico can only read and write
-within their respected subtrees/prefixes.  To configure more compartmentalized
-configurations of the Calico components, see this addon
+with the proper certificates. This document describes the users and roles
+needed to segment etcd so that Kubernetes and {{site.prodname}} can only read and write
+within their respected subtrees/prefixes. To configure more compartmentalized
+configurations of the {{site.prodname}} components, see this addon:
 [guide](kubernetes-advanced).
 
 This guide assumes you are following the general
@@ -15,8 +16,8 @@ for setting up certificates and etcd cluster, users, and roles.
 
 ## Why you might be interested in this guide
 
-You are using Kubernetes and Calico who share an etcd datastore and wish
-to ensure that Calico and Kubernetes are unable to access each other's etcd
+You are using Kubernetes and {{site.prodname}} that share an etcd datastore and you wish
+to ensure that {{site.prodname}} and Kubernetes are unable to access each others' etcd
 data.
 
 ## Needed etcd Roles
@@ -25,17 +26,17 @@ The following components need certificates with a Common Name that matches an
 etcd user that has been given appropriate roles allowing access to the key
 prefixes or paths listed below.
 - kube-apiserver
-  - Read and Write access to `/registry`.
-    - With Kubernetes v1.6 the etcd v3 API is used, this can be switched
+  - Read and write access to `/registry`.
+    - Kubernetes v1.6 uses the etcd v3 API; this can be switched
 	  to etcd v2 by passing a flag to kube-apiserver.
 	- This key prefix can be changed by passing the proper option to the
 	  kube-apiserver.
   - The etcd user needs to be given the root role to perform compaction when
     using the etcd v3 API (this also means that Kubernetes will have
     full read and write access to v3 data).
-- Calico
-  - Read and Write access to `/calico`.
-  - Calico uses the etcd v2 API so the user and roles must be created there
+- {{site.prodname}}
+  - Read and write access to `/calico`.
+  - {{site.prodname}} uses the etcd v2 API so the user and roles must be created there
     too.
 
 All certificate/key pairs that are referenced below are assumed to have been
@@ -52,9 +53,9 @@ accessing an etcd cluster are:
 Setting these will depend on the method used to deploy Kubernetes so refer
 to your integrator's documentation for help setting these flags.
 
-## Updating a hosted Calico manifest
+## Updating a hosted {{site.prodname}} manifest
 
-To deploy hosted Calico with the CA and Calico-specific certificate/key pair,
+To deploy hosted {{site.prodname}} with the CA and {{site.prodname}}-specific certificate/key pair,
 use [this manifest template]({{site.baseurl}}/{{page.version}}/getting-started/kubernetes/installation/hosted/calico.yaml)
 with the modifications described below. The same information could be added to
 or updated in other manifests but the linked one is the most straight forward
@@ -70,7 +71,7 @@ The pieces that would need updating are:
   ```
 - The Secret named `calico-etcd-secrets` needs to be updated with the CA and
   cert/key. The information stored in `data` in a Secret needs to be base64
-  encoded.  The files can be converted to base64 encoding by doing a command
+  encoded. The files can be converted to base64 encoding by doing a command
   like `cat <file> | base64 -w 0` on each file and then inserting the output
   to the appropriate field.
     - The `etcd-key` field needs the base64 encoded file contents from the

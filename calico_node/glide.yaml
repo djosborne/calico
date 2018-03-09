@@ -1,18 +1,21 @@
 package: github.com/projectcalico/calico/calico_node
 import:
-- package: github.com/Sirupsen/logrus
-  version: ^0.10.0
+- package: github.com/sirupsen/logrus
+  version: ^1.0.3
 - package: github.com/projectcalico/libcalico-go
-  version: ^1.5.0
+  version: 16a16d0960511310db4772874de7650ab2967827
   subpackages:
   - lib/api
   - lib/client
+  - lib/apis/v3
+  - lib/clientv3
   - lib/errors
   - lib/ipip
   - lib/net
   - lib/numorstring
-testImport:
-- package: github.com/onsi/ginkgo
-  subpackages:
-  - extensions/table
-- package: github.com/onsi/gomega
+- package: github.com/coreos/etcd
+  version: v3.3.0
+- package: github.com/prometheus/procfs
+  version: f98634e408857669d61064b283c4cde240622865
+- package: golang.org/x/net
+  version: 66aacef3dd8a676686c7ae3716979581e8b03c47

@@ -1,5 +1,6 @@
 ---
 title: Resource Definitions
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/calicoctl/resources/'
 ---
 
 This section describes the set of valid resource types that can be managed
@@ -19,7 +20,7 @@ hostEndpoint resources).
 The general structure of a single resource is as follows:
 
 ```yaml
-apiVersion: v1
+apiVersion: projectcalico.org/v3
 kind: <type of resource>
 metadata:
   # Identifying information
@@ -34,7 +35,7 @@ spec:
 
 | Field    | Description           | Accepted Values              | Schema |
 |----------|-----------------------|------------------------------|--------|
-| apiVersion     | Indicates the version of the API that the data corresponds to. | v1 | string |
+| apiVersion     | Indicates the version of the API that the data corresponds to. | projectcalico.org/v3 | string |
 | kind     | Specifies the type of resource described by the YAML document. |  | [kind](#supported-kinds) |
 | metadata | Contains information used to uniquely identify the particular instance of the resource. | | map |
 | spec     | Contains the resource specification. | | map |
@@ -43,42 +44,51 @@ spec:
 
 The following resources are supported:
 
-- [bgpPeer]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/bgppeer)
-- [hostEndpoint]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/hostendpoint)
-- [policy]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/policy)
-- [ipPool]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/ippool)
-- [profile]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/profile)
-- [workloadEndpoint]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/workloadendpoint)
+- [BGPPeer]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/bgppeer)
+- [BGPConfiguration]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/bgpconfig)
+- [HostEndpoint]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/hostendpoint)
+- [NetworkPolicy]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/networkpolicy)
+- [GlobalNetworkPolicy]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/globalnetworkpolicy)
+- [IPPool]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/ippool)
+- [Profile]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/profile)
+- [FelixConfiguration]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/felixconfig)
+- [WorkloadEndpoint]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/workloadendpoint)
+
+### Resource name requirements
+
+Every resource must have the `name` field specified. Name must be unique within a namespace.
+Name required when creating resources, and cannot be updated.
+A valid resource name can have alphanumeric characters with optional `.`, `_`, or `-`. of up to 128 characters total.
 
 ### Multiple resources in a single file
 
-A file may contain multiple resource documents specified in a YAML list format. For example, the following is the contents of a file containing two `hostEndpoint` resources:
+A file may contain multiple resource documents specified in a YAML list format. For example, the following is the contents of a file containing two `HostEndpoint` resources:
 
 ```
-- apiVersion: v1
-  kind: hostEndpoint
+- apiVersion: projectcalico.org/v3
+  kind: HostEndpoint
   metadata:
     name: endpoint1
-    node: host1
     labels:
       type: database
   spec:
     interface: eth0
+    node: host1
     profiles:
     - prof1
     - prof2
     expectedIPs:
     - 1.2.3.4
     - "00:bb::aa"
-- apiVersion: v1
-  kind: hostEndpoint
+- apiVersion: projectcalico.org/v3
+  kind: HostEndpoint
   metadata:
     name: endpoint2
-    node: host1
     labels:
       type: frontend
   spec:
     interface: eth1
+    node: host1
     profiles:
     - prof1
     - prof2

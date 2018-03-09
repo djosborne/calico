@@ -1,5 +1,6 @@
 ---
 title: Frequently Asked Questions
+canonical_url: 'https://docs.projectcalico.org/v3.0/usage/troubleshooting/faq'
 ---
 
 This page contains answers to several frequently asked technical
@@ -16,7 +17,7 @@ you should look into it if you have more than a handful of nodes on a
 single site.
 
 For a more detailed discussion of this topic, see our blog post at 
-[Why Calico?](http://www.projectcalico.org/why-calico/).
+[Why Calico?](https://www.projectcalico.org/why-calico/).
 
 ## "Does Calico work with IPv6?"
 

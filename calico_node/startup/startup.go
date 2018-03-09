@@ -14,28 +14,40 @@
 package main
 
 import (
+	"context"
+	cryptorand "crypto/rand"
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
+	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/projectcalico/calico/calico_node/calicoclient"
 	"github.com/projectcalico/calico/calico_node/startup/autodetection"
-	"github.com/projectcalico/libcalico-go/lib/api"
-	"github.com/projectcalico/libcalico-go/lib/client"
-	"github.com/projectcalico/libcalico-go/lib/errors"
-	"github.com/projectcalico/libcalico-go/lib/ipip"
-	"github.com/projectcalico/libcalico-go/lib/net"
+	"github.com/projectcalico/libcalico-go/lib/apiconfig"
+	api "github.com/projectcalico/libcalico-go/lib/apis/v3"
+	client "github.com/projectcalico/libcalico-go/lib/clientv3"
+	cerrors "github.com/projectcalico/libcalico-go/lib/errors"
+	"github.com/projectcalico/libcalico-go/lib/logutils"
+	"github.com/projectcalico/libcalico-go/lib/names"
+	cnet "github.com/projectcalico/libcalico-go/lib/net"
 	"github.com/projectcalico/libcalico-go/lib/numorstring"
+	"github.com/projectcalico/libcalico-go/lib/options"
+	"github.com/projectcalico/libcalico-go/lib/upgrade/migrator"
+	"github.com/projectcalico/libcalico-go/lib/upgrade/migrator/clients"
 )
 
 const (
 	DEFAULT_IPV4_POOL_CIDR              = "192.168.0.0/16"
-	DEFAULT_IPV6_POOL_CIDR              = "fd80:24e2:f998:72d6::/64"
+	DEFAULT_IPV4_POOL_NAME              = "default-ipv4-ippool"
+	DEFAULT_IPV6_POOL_NAME              = "default-ipv6-ippool"
 	AUTODETECTION_METHOD_FIRST          = "first-found"
 	AUTODETECTION_METHOD_CAN_REACH      = "can-reach="
 	AUTODETECTION_METHOD_INTERFACE      = "interface="
@@ -47,7 +59,7 @@ const (
 var DEFAULT_INTERFACES_TO_EXCLUDE []string = []string{
 	"docker.*", "cbr.*", "dummy.*",
 	"virbr.*", "lxcbr.*", "veth.*", "lo",
-	"cali.*", "tunl.*", "flannel.*",
+	"cali.*", "tunl.*", "flannel.*", "kube-ipvs.*",
 }
 
 // Version string, set during build.
@@ -56,77 +68,174 @@ var VERSION string
 // For testing purposes we define an exit function that we can override.
 var exitFunction = os.Exit
 
+var (
+	// Default values, names for different configs.
+	defaultLogSeverity        = "Info"
+	globalFelixConfigName     = "default"
+	felixNodeConfigNamePrefix = "node."
+)
+
 // This file contains the main startup processing for the calico/node.  This
 // includes:
 // -  Detecting IP address and Network to use for BGP
 // -  Configuring the node resource with IP/AS information provided in the
 //    environment, or autodetected.
 // -  Creating default IP Pools for quick-start use
-
 func main() {
 	// Check $CALICO_STARTUP_LOGLEVEL to capture early log statements
 	configureLogging()
 
-	// Determine the name for this node and ensure the environment is always
-	// available in the startup env file that is sourced in rc.local.
+	// Determine the name for this node.
 	nodeName := determineNodeName()
 
-	// Create the Calico API client.
-	cfg, client := calicoclient.CreateClient()
+	// Create the Calico API cli.
+	cfg, cli := calicoclient.CreateClient()
+
+	ctx := context.Background()
 
 	// An explicit value of true is required to wait for the datastore.
 	if os.Getenv("WAIT_FOR_DATASTORE") == "true" {
-		waitForConnection(client)
+		waitForConnection(ctx, cli)
 		log.Info("Datastore is ready")
 	} else {
-		message("Skipping datastore connection test")
+		log.Info("Skipping datastore connection test")
+	}
+
+	if cfg.Spec.DatastoreType == apiconfig.Kubernetes {
+		if err := ensureKDDMigrated(cfg, cli); err != nil {
+			log.WithError(err).Errorf("Unable to ensure datastore is migrated.")
+			terminate()
+		}
 	}
 
 	// Query the current Node resources.  We update our node resource with
 	// updated IP data and use the full list of nodes for validation.
-	node := getNode(client, nodeName)
+	node := getNode(ctx, cli, nodeName)
 
-	// Configure and verify the node IP addresses and subnets.
-	checkConflicts := configureIPsAndSubnets(node)
+	// If Calico is running in policy only mode we don't need to write
+	// BGP related details to the Node.
+	if os.Getenv("CALICO_NETWORKING_BACKEND") != "none" {
+		// Configure and verify the node IP addresses and subnets.
+		checkConflicts, err := configureIPsAndSubnets(node)
+		if err != nil {
+			clearv4 := os.Getenv("IP") == "autodetect"
+			clearv6 := os.Getenv("IP6") == "autodetect"
+			if node.ResourceVersion != "" {
+				// If we're auto-detecting an IP on an existing node and hit an error, clear the previous
+				// IP addresses from the node since they are no longer valid.
+				clearNodeIPs(ctx, cli, node, clearv4, clearv6)
+			}
+			terminate()
+		}
 
-	// If we report an IP change (v4 or v6) we should verify there are no
-	// conflicts between Nodes.
-	if checkConflicts && os.Getenv("DISABLE_NODE_IP_CHECK") != "true" {
-		checkConflictingNodes(client, node)
+		// If we report an IP change (v4 or v6) we should verify there are no
+		// conflicts between Nodes.
+		if checkConflicts && os.Getenv("DISABLE_NODE_IP_CHECK") != "true" {
+			v4conflict, v6conflict, err := checkConflictingNodes(ctx, cli, node)
+			if err != nil {
+				// If we've auto-detected a new IP address for an existing node that now conflicts, clear the old IP address(es)
+				// from the node in the datastore. This frees the address in case it needs to be used for another node.
+				clearv4 := (os.Getenv("IP") == "autodetect") && v4conflict
+				clearv6 := (os.Getenv("IP6") == "autodetect") && v6conflict
+				if node.ResourceVersion != "" {
+					clearNodeIPs(ctx, cli, node, clearv4, clearv6)
+				}
+
+				terminate()
+			}
+		}
+
+		// Configure the node AS number.
+		configureASNumber(node)
 	}
 
-	// Configure the node AS number.
-	configureASNumber(node)
+	configureNodeRef(node)
 
 	// Check expected filesystem
 	ensureFilesystemAsExpected()
 
 	// Apply the updated node resource.
-	if _, err := client.Nodes().Apply(node); err != nil {
-		fatal("Unable to set node resource configuration: %s", err)
+	if _, err := CreateOrUpdate(ctx, cli, node); err != nil {
+		log.WithError(err).Errorf("Unable to set node resource configuration")
 		terminate()
 	}
 
 	// Configure IP Pool configuration.
-	configureIPPools(client)
+	configureIPPools(ctx, cli)
 
 	// Set default configuration required for the cluster.
-	if err := ensureDefaultConfig(cfg, client, node); err != nil {
-		fatal("Unable to set global default configuration: %s", err)
+	if err := ensureDefaultConfig(ctx, cfg, cli, node); err != nil {
+		log.WithError(err).Errorf("Unable to set global default configuration")
 		terminate()
 	}
 
-	// Write the startup.env file now that we are ready to start other
-	// components.
-	writeStartupEnv(nodeName, node.Spec.BGP.IPv4Address, node.Spec.BGP.IPv6Address)
+	// Write config files now that we are ready to start other components.
+	writeNodeConfig(nodeName)
 
 	// Tell the user what the name of the node is.
-	message("Using node name: %s", nodeName)
+	log.Infof("Using node name: %s", nodeName)
+}
+
+// configureNodeRef will attempt to discover the cluster type it is running on, check to ensure we
+// have not already set it on this Node, and set it if need be.
+func configureNodeRef(node *api.Node) {
+	orchestrator := "k8s"
+	nodeRef := ""
+
+	// Sort out what type of cluster we're running on.
+	if nodeRef = os.Getenv("CALICO_K8S_NODE_REF"); nodeRef == "" {
+		return
+	}
+
+	node.Spec.OrchRefs = []api.OrchRef{api.OrchRef{NodeName: nodeRef, Orchestrator: orchestrator}}
+}
+
+// CreateOrUpdate creates the Node if ResourceVersion is not specified,
+// or Update if it's specified.
+func CreateOrUpdate(ctx context.Context, client client.Interface, node *api.Node) (*api.Node, error) {
+	if node.ResourceVersion != "" {
+		return client.Nodes().Update(ctx, node, options.SetOptions{})
+	}
+
+	return client.Nodes().Create(ctx, node, options.SetOptions{})
+}
+
+func clearNodeIPs(ctx context.Context, client client.Interface, node *api.Node, clearv4, clearv6 bool) {
+	if clearv4 {
+		log.WithField("IP", node.Spec.BGP.IPv4Address).Info("Clearing out-of-date IPv4 address from this node")
+		node.Spec.BGP.IPv4Address = ""
+	}
+	if clearv6 {
+		log.WithField("IP", node.Spec.BGP.IPv6Address).Info("Clearing out-of-date IPv6 address from this node")
+		node.Spec.BGP.IPv6Address = ""
+	}
+
+	// If the BGP spec is empty, then set it to nil.
+	if node.Spec.BGP != nil && reflect.DeepEqual(*node.Spec.BGP, api.NodeBGPSpec{}) {
+		node.Spec.BGP = nil
+	}
+
+	if clearv4 || clearv6 {
+		_, err := client.Nodes().Update(ctx, node, options.SetOptions{})
+		if err != nil {
+			log.WithError(err).Warnf("Failed to clear node addresses")
+		}
+	}
 }
 
 func configureLogging() {
-	// Default to error logging
-	logLevel := log.ErrorLevel
+	// Log to stdout.  this prevents our logs from being interpreted as errors by, for example,
+	// fluentd's default configuration.
+	log.SetOutput(os.Stdout)
+
+	// Set log formatting.
+	log.SetFormatter(&logutils.Formatter{})
+
+	// Install a hook that adds file and line number information.
+	log.AddHook(&logutils.ContextHook{})
+
+	// Default to info level logging
+	logLevel := log.InfoLevel
 
 	rawLogLevel := os.Getenv("CALICO_STARTUP_LOGLEVEL")
 	if rawLogLevel != "" {
@@ -134,7 +243,7 @@ func configureLogging() {
 		if err == nil {
 			logLevel = parsedLevel
 		} else {
-			log.WithError(err).Error("Failed to parse log level, defaulting to error.")
+			log.WithError(err).Error("Failed to parse log level, defaulting to info.")
 		}
 	}
 
@@ -145,52 +254,67 @@ func configureLogging() {
 // determineNodeName is called to determine the node name to use for this instance
 // of calico/node.
 func determineNodeName() string {
-	// Determine the name of this node.
-	nodeName := os.Getenv("NODENAME")
-	if nodeName == "" {
-		// NODENAME not specified, check HOSTNAME (we maintain this for
-		// backwards compatibility).
-		log.Info("NODENAME environment not specified - check HOSTNAME")
-		nodeName = os.Getenv("HOSTNAME")
-	}
-	if nodeName == "" {
-		// The node name has not been specified.  We need to use the OS
-		// hostname - but should warn the user that this is not a
-		// recommended way to start the node container.
-		var err error
-		if nodeName, err = os.Hostname(); err != nil {
-			log.Info("Unable to determine hostname - exiting")
-			panic(err)
-		}
+	var nodeName string
+	var err error
 
-		message("******************************************************************************")
-		message("* WARNING                                                                    *")
-		message("* Auto-detecting node name.  It is recommended that an explicit fixed value  *")
-		message("* is supplied using the NODENAME environment variable.  Using a fixed value  *")
-		message("* ensures that any changes to the compute host's hostname will not affect    *")
-		message("* the Calico configuration when calico/node restarts.                        *")
-		message("******************************************************************************")
+	// Determine the name of this node.  Precedence is:
+	// -  NODENAME
+	// -  Value stored in /var/lib/calico/nodename
+	// -  HOSTNAME (lowercase)
+	// -  os.Hostname (lowercase).
+	// We use the names.Hostname which lowercases and trims the name.
+	if nodeName = strings.TrimSpace(os.Getenv("NODENAME")); nodeName != "" {
+		log.Infof("Using NODENAME environment for node name")
+	} else if nodeName = nodenameFromFile(); nodeName != "" {
+		log.Info("Using stored node name from /var/lib/calico/nodename")
+	} else if nodeName = strings.ToLower(strings.TrimSpace(os.Getenv("HOSTNAME"))); nodeName != "" {
+		log.Infof("Using HOSTNAME environment (lowercase) for node name")
+	} else if nodeName, err = names.Hostname(); err != nil {
+		log.WithError(err).Error("Unable to determine hostname")
+		terminate()
+	} else {
+		log.Warn("Using auto-detected node name. It is recommended that an explicit value is supplied using " +
+			"the NODENAME environment variable.")
 	}
+	log.Infof("Determined node name: %s", nodeName)
+
 	return nodeName
 }
 
+// nodenameFromFile reads the /var/lib/calico/nodename file if it exists and
+// returns the nodename within.
+func nodenameFromFile() string {
+	data, err := ioutil.ReadFile("/var/lib/calico/nodename")
+	if err != nil {
+		if os.IsNotExist(err) {
+			// File doesn't exist, return empty string.
+			log.Debug("File does not exist: /var/lib/calico/nodename")
+			return ""
+		}
+		log.WithError(err).Error("Failed to read /var/lib/calico/nodename")
+		terminate()
+	}
+	return string(data)
+}
+
 // waitForConnection waits for the datastore to become accessible.
-func waitForConnection(c *client.Client) {
-	message("Checking datastore connection")
+func waitForConnection(ctx context.Context, c client.Interface) {
+	log.Info("Checking datastore connection")
 	for {
 		// Query some arbitrary configuration to see if the connection
 		// is working.  Getting a specific Node is a good option, even
 		// if the Node does not exist.
-		_, err := c.Nodes().Get(api.NodeMetadata{Name: "foo"})
+		_, err := c.Nodes().Get(ctx, "foo", options.GetOptions{})
 
 		// We only care about a couple of error cases, all others would
 		// suggest the datastore is accessible.
 		if err != nil {
 			switch err.(type) {
-			case errors.ErrorConnectionUnauthorized:
-				fatal("Connection to the datastore is unauthorized")
+			case cerrors.ErrorConnectionUnauthorized:
+				log.Warn("Connection to the datastore is unauthorized")
 				terminate()
-			case errors.ErrorDatastoreError:
+			case cerrors.ErrorDatastoreError:
+				log.WithError(err).Info("Hit error connecting to datastore - retry")
 				time.Sleep(1000 * time.Millisecond)
 				continue
 			}
@@ -199,39 +323,35 @@ func waitForConnection(c *client.Client) {
 		// We've connected to the datastore - break out of the loop.
 		break
 	}
-	message("Datastore connection verified")
+	log.Info("Datastore connection verified")
 }
 
-// writeStartupEnv writes out the startup.env file to set environment variables
-// that are required by confd/bird etc. but may not have been passed into the
-// container.
-func writeStartupEnv(nodeName string, ip, ip6 *net.IPNet) {
-	text := "export NODENAME=" + nodeName + "\n"
-
-	// Write out the startup.env file to ensure required environments are
-	// set (which they might not otherwise be).
-	if err := ioutil.WriteFile("startup.env", []byte(text), 0666); err != nil {
-		log.WithError(err).Info("Unable to write to startup.env")
-		fatal("Unable to write to local filesystem")
+// writeNodeConfig writes out the this node's configuration to disk for use by other components.
+// Specifically, it creates:
+// - /var/lib/calico/nodename - used to persist the determined node name to disk for future use.
+func writeNodeConfig(nodeName string) {
+	log.Debugf("Writing %s to /var/lib/calico/nodename", nodeName)
+	if err := ioutil.WriteFile("/var/lib/calico/nodename", []byte(nodeName), 0644); err != nil {
+		log.WithError(err).Error("Unable to write to /var/lib/calico/nodename")
 		terminate()
 	}
 }
 
-// getNode returns the current node configuration.  If this node has not yet
+// getNode returns the current node configuration. If this node has not yet
 // been created, it returns a blank node resource.
-func getNode(client *client.Client, nodeName string) *api.Node {
-	meta := api.NodeMetadata{Name: nodeName}
-	node, err := client.Nodes().Get(meta)
+func getNode(ctx context.Context, client client.Interface, nodeName string) *api.Node {
+	node, err := client.Nodes().Get(ctx, nodeName, options.GetOptions{})
 
 	if err != nil {
-		if _, ok := err.(errors.ErrorResourceDoesNotExist); !ok {
+		if _, ok := err.(cerrors.ErrorResourceDoesNotExist); !ok {
 			log.WithError(err).WithField("Name", nodeName).Info("Unable to query node configuration")
-			fatal("Unable to access datastore to query node configuration")
+			log.Warn("Unable to access datastore to query node configuration")
 			terminate()
 		}
 
 		log.WithField("Name", nodeName).Info("Building new node resource")
-		node = &api.Node{Metadata: api.NodeMetadata{Name: nodeName}}
+		node = api.NewNode()
+		node.Name = nodeName
 	}
 
 	return node
@@ -239,12 +359,12 @@ func getNode(client *client.Client, nodeName string) *api.Node {
 
 // configureIPsAndSubnets updates the supplied node resource with IP and Subnet
 // information to use for BGP.  This returns true if we detect a change in Node IP address.
-func configureIPsAndSubnets(node *api.Node) bool {
+func configureIPsAndSubnets(node *api.Node) (bool, error) {
 	// If the node resource currently has no BGP configuration, add an empty
 	// set of configuration as it makes the processing below easier, and we
 	// must end up configuring some BGP fields before we complete.
 	if node.Spec.BGP == nil {
-		log.Info("Initialise BGP data")
+		log.Info("Initialize BGP data")
 		node.Spec.BGP = &api.NodeBGPSpec{}
 	}
 
@@ -258,24 +378,21 @@ func configureIPsAndSubnets(node *api.Node) bool {
 	// If we aren't auto-detecting then we need to validate the configured
 	// value and possibly fix up missing subnet configuration.
 	ipv4Env := os.Getenv("IP")
-	if ipv4Env == "autodetect" || (ipv4Env == "" && node.Spec.BGP.IPv4Address == nil) {
+	if ipv4Env == "autodetect" || (ipv4Env == "" && node.Spec.BGP.IPv4Address == "") {
 		adm := os.Getenv("IP_AUTODETECTION_METHOD")
 		cidr := autoDetectCIDR(adm, 4)
 		if cidr != nil {
 			// We autodetected an IPv4 address so update the value in the node.
-			node.Spec.BGP.IPv4Address = cidr
-		} else if node.Spec.BGP.IPv4Address == nil {
+			node.Spec.BGP.IPv4Address = cidr.String()
+		} else if node.Spec.BGP.IPv4Address == "" {
 			// No IPv4 address is configured, but we always require one, so exit.
-			fatal("Couldn't autodetect a management IPv4 address:")
-			message("  -  provide an IPv4 address by configuring one in the node resource, or")
-			message("  -  provide an IPv4 address using the IP environment, or")
-			message("  -  if auto-detecting, use a different autodetection method.")
-			terminate()
+			log.Warn("Couldn't autodetect an IPv4 address. If auto-detecting, choose a different autodetection method. Otherwise provide an explicit address.")
+			return false, fmt.Errorf("Failed to autodetect an IPv4 address")
 		} else {
 			// No IPv4 autodetected, but a previous one was configured.
 			// Tell the user we are leaving the value unchanged.  We
 			// will validate that the IP matches one on the interface.
-			warning("Autodetection of IPv4 address failed, keeping existing value: %s", node.Spec.BGP.IPv4Address.String())
+			log.Warnf("Autodetection of IPv4 address failed, keeping existing value: %s", node.Spec.BGP.IPv4Address)
 			validateIP(node.Spec.BGP.IPv4Address)
 		}
 	} else {
@@ -291,21 +408,17 @@ func configureIPsAndSubnets(node *api.Node) bool {
 		cidr := autoDetectCIDR(adm, 6)
 		if cidr != nil {
 			// We autodetected an IPv6 address so update the value in the node.
-			node.Spec.BGP.IPv6Address = cidr
-		} else if node.Spec.BGP.IPv6Address == nil {
+			node.Spec.BGP.IPv6Address = cidr.String()
+		} else if node.Spec.BGP.IPv6Address == "" {
 			// No IPv6 address is configured, but we have requested one, so exit.
-			fatal("Couldn't autodetect a management IPv6 address:")
-			message("  -  provide an IPv6 address by configuring one in the node resource, or")
-			message("  -  provide an IPv6 address using the IP6 environment, or")
-			message("  -  use a different autodetection method, or")
-			message("  -  don't request autodetection of an IPv6 address.")
-			terminate()
+			log.Warn("Couldn't autodetect an IPv6 address. If auto-detecting, choose a different autodetection method. Otherwise provide an explicit address.")
+			return false, fmt.Errorf("Failed to autodetect an IPv6 address")
 		} else {
 			// No IPv6 autodetected, but a previous one was configured.
 			// Tell the user we are leaving the value unchanged.  We
 			// will validate that the IP matches one on the interface.
-			warning("Autodetection of IPv6 address failed, keeping existing value: %s", node.Spec.BGP.IPv6Address.String())
-			validateIP(node.Spec.BGP.IPv4Address)
+			log.Warnf("Autodetection of IPv6 address failed, keeping existing value: %s", node.Spec.BGP.IPv6Address)
+			validateIP(node.Spec.BGP.IPv6Address)
 		}
 	} else {
 		if ipv6Env != "" {
@@ -315,67 +428,70 @@ func configureIPsAndSubnets(node *api.Node) bool {
 	}
 
 	// Detect if we've seen the IP address change, and flag that we need to check for conflicting Nodes
-	if oldIpv4 == nil || !node.Spec.BGP.IPv4Address.IP.Equal(oldIpv4.IP) {
+	if oldIpv4 == "" || node.Spec.BGP.IPv4Address != oldIpv4 {
 		log.Info("Node IPv4 changed, will check for conflicts")
-		return true
+		return true, nil
 	}
-	if (oldIpv6 == nil && node.Spec.BGP.IPv6Address != nil) || (oldIpv6 != nil && !node.Spec.BGP.IPv6Address.IP.Equal(oldIpv6.IP)) {
+	if (oldIpv6 == "" && node.Spec.BGP.IPv6Address != "") || (oldIpv6 != "" && node.Spec.BGP.IPv6Address != oldIpv6) {
 		log.Info("Node IPv6 changed, will check for conflicts")
-		return true
+		return true, nil
 	}
 
-	return false
+	return false, nil
 }
 
 // fetchAndValidateIPAndNetwork fetches and validates the IP configuration from
 // either the environment variables or from the values already configured in the
 // node.
-func parseIPEnvironment(envName, envValue string, version int) *net.IPNet {
+func parseIPEnvironment(envName, envValue string, version int) string {
 	// To parse the environment (which could be an IP or a CIDR), convert
 	// to a JSON string and use the UnmarshalJSON method on the IPNet
 	// struct to parse the value.
-	ip := &net.IPNet{}
+	ip := &cnet.IPNet{}
 	err := ip.UnmarshalJSON([]byte("\"" + envValue + "\""))
 	if err != nil || ip.Version() != version {
-		fatal("Environment does not contain a valid IPv%d address: %s=%s", version, envName, envValue)
+		log.Warn("Environment does not contain a valid IPv%d address: %s=%s", version, envName, envValue)
 		terminate()
 	}
-	message("Using IPv%d address from environment: %s=%s", ip.Version(), envName, envValue)
+	log.Infof("Using IPv%d address from environment: %s=%s", ip.Version(), envName, envValue)
 
-	return ip
+	return ip.String()
 }
 
 // validateIP checks that the IP address is actually on one of the host
 // interfaces and warns if not.
-func validateIP(ipn *net.IPNet) {
+func validateIP(ipn string) {
 	// No validation required if no IP address is specified.
-	if ipn == nil {
+	if ipn == "" {
 		return
 	}
 
-	// Pull out the IP as a net.IP (it has useful string and version methods).
-	ip := net.IP{ipn.IP}
+	ipAddr, _, err := cnet.ParseCIDROrIP(ipn)
+	if err != nil {
+		log.WithError(err).Errorf("Failed to parse autodetected CIDR '%s'", ipn)
+		terminate()
+	}
 
 	// Get a complete list of interfaces with their addresses and check if
 	// the IP address can be found.
-	ifaces, err := autodetection.GetInterfaces(nil, nil, ip.Version())
+	ifaces, err := autodetection.GetInterfaces(nil, nil, ipAddr.Version())
 	if err != nil {
-		fatal("Unable to query host interfaces: %s", err)
+		log.WithError(err).Error("Unable to query host interfaces")
 		terminate()
 	}
 	if len(ifaces) == 0 {
-		message("No interfaces found for validating IP configuration")
+		log.Info("No interfaces found for validating IP configuration")
 	}
 
 	for _, i := range ifaces {
 		for _, c := range i.Cidrs {
-			if ip.Equal(c.IP) {
-				message("IPv%d address %s discovered on interface %s", ip.Version(), ip.String(), i.Name)
+			if ipAddr.Equal(c.IP) {
+				log.Infof("IPv%d address %s discovered on interface %s", ipAddr.Version(), ipAddr.String(), i.Name)
 				return
 			}
 		}
 	}
-	warning("Unable to confirm IPv%d address %s is assigned to this host", ip.Version(), ip)
+	log.Warnf("Unable to confirm IPv%d address %s is assigned to this host", ipAddr.Version(), ipAddr)
 }
 
 // evaluateENVBool evaluates a passed environment variable
@@ -403,7 +519,7 @@ func evaluateENVBool(envVar string, defaultValue bool) bool {
 
 // autoDetectCIDR auto-detects the IP and Network using the requested
 // detection method.
-func autoDetectCIDR(method string, version int) *net.IPNet {
+func autoDetectCIDR(method string, version int) *cnet.IPNet {
 	if method == "" || method == AUTODETECTION_METHOD_FIRST {
 		// Autodetect the IP by enumerating all interfaces (excluding
 		// known internal interfaces).
@@ -429,68 +545,67 @@ func autoDetectCIDR(method string, version int) *net.IPNet {
 	}
 
 	// The autodetection method is not recognised and is required.  Exit.
-	fatal("Invalid IP autodection method: %s", method)
+	log.Errorf("Invalid IP autodection method: %s", method)
 	terminate()
 	return nil
 }
 
 // autoDetectCIDRFirstFound auto-detects the first valid Network it finds across
 // all interfaces (excluding common known internal interface names).
-func autoDetectCIDRFirstFound(version int) *net.IPNet {
+func autoDetectCIDRFirstFound(version int) *cnet.IPNet {
 	incl := []string{}
 
 	iface, cidr, err := autodetection.FilteredEnumeration(incl, DEFAULT_INTERFACES_TO_EXCLUDE, version)
 	if err != nil {
-		warning("Unable to auto-detect an IPv%d address: %s", version, err)
+		log.Warnf("Unable to auto-detect an IPv%d address: %s", version, err)
 		return nil
 	}
 
-	message("Using autodetected IPv%d address on interface %s: %s", version, iface.Name, cidr.String())
+	log.Infof("Using autodetected IPv%d address on interface %s: %s", version, iface.Name, cidr.String())
 
 	return cidr
 }
 
 // autoDetectCIDRByInterface auto-detects the first valid Network on the interfaces
 // matching the supplied interface regex.
-func autoDetectCIDRByInterface(ifaceRegexes []string, version int) *net.IPNet {
+func autoDetectCIDRByInterface(ifaceRegexes []string, version int) *cnet.IPNet {
 	iface, cidr, err := autodetection.FilteredEnumeration(ifaceRegexes, nil, version)
 	if err != nil {
-		warning("Unable to auto-detect an IPv%d address using interface regexes %v: %s", version, ifaceRegexes, err)
+		log.Warnf("Unable to auto-detect an IPv%d address using interface regexes %v: %s", version, ifaceRegexes, err)
 		return nil
 	}
 
-	message("Using autodetected IPv%d address %s on matching interface %s", version, cidr.String(), iface.Name)
+	log.Infof("Using autodetected IPv%d address %s on matching interface %s", version, cidr.String(), iface.Name)
 
 	return cidr
 }
 
 // autoDetectCIDRByReach auto-detects the IP and Network by setting up a UDP
 // connection to a "reach" address.
-func autoDetectCIDRByReach(dest string, version int) *net.IPNet {
+func autoDetectCIDRByReach(dest string, version int) *cnet.IPNet {
 	if cidr, err := autodetection.ReachDestination(dest, version); err != nil {
-		warning("Unable to auto-detect IPv%d address by connecting to %s: %s", version, dest, err)
+		log.Warnf("Unable to auto-detect IPv%d address by connecting to %s: %s", version, dest, err)
 		return nil
 	} else {
-		message("Using autodetected IPv%d address %s, detected by connecting to %s", version, cidr.String(), dest)
+		log.Infof("Using autodetected IPv%d address %s, detected by connecting to %s", version, cidr.String(), dest)
 		return cidr
 	}
 }
 
 // autoDetectCIDRBySkipInterface auto-detects the first valid Network on the interfaces
 // matching the supplied interface regexes.
-func autoDetectCIDRBySkipInterface(ifaceRegexes []string, version int) *net.IPNet {
+func autoDetectCIDRBySkipInterface(ifaceRegexes []string, version int) *cnet.IPNet {
 	incl := []string{}
 	excl := DEFAULT_INTERFACES_TO_EXCLUDE
 	excl = append(excl, ifaceRegexes...)
 
 	iface, cidr, err := autodetection.FilteredEnumeration(incl, excl, version)
 	if err != nil {
-		warning("Unable to auto-detect an IPv%d address while excluding %v: %s", version, ifaceRegexes, err)
+		log.Warnf("Unable to auto-detect an IPv%d address while excluding %v: %s", version, ifaceRegexes, err)
 		return nil
 	}
 
-	message("Using autodetected IPv%d address on interface %s: %s while skipping matching interfaces", version, iface.Name, cidr.String())
-
+	log.Infof("Using autodetected IPv%d address on interface %s: %s while skipping matching interfaces", version, iface.Name, cidr.String())
 	return cidr
 }
 
@@ -501,31 +616,46 @@ func configureASNumber(node *api.Node) {
 	asStr := os.Getenv("AS")
 	if asStr != "" {
 		if asNum, err := numorstring.ASNumberFromString(asStr); err != nil {
-			fatal("The AS number specified in the environment (AS=%s) is not valid: %s", asStr, err)
+			log.WithError(err).Errorf("The AS number specified in the environment (AS=%s) is not valid", asStr)
 			terminate()
 		} else {
-			message("Using AS number specified in environment (AS=%s)", asNum)
+			log.Infof("Using AS number specified in environment (AS=%s)", asNum)
 			node.Spec.BGP.ASNumber = &asNum
 		}
 	} else {
 		if node.Spec.BGP.ASNumber == nil {
-			message("No AS number configured on node resource, using global value")
+			log.Info("No AS number configured on node resource, using global value")
 		} else {
-			message("Using AS number %s configured in node resource", node.Spec.BGP.ASNumber)
+			log.Infof("Using AS number %s configured in node resource", node.Spec.BGP.ASNumber)
 		}
 	}
 }
 
+// generateIPv6ULAPrefix return a random generated ULA IPv6 prefix as per RFC 4193.  The pool
+// is generated from bytes pulled from a secure random source.
+func GenerateIPv6ULAPrefix() (string, error) {
+	ulaAddr := []byte{0xfd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	_, err := cryptorand.Read(ulaAddr[1:6])
+	if err != nil {
+		return "", err
+	}
+	ipNet := net.IPNet{
+		IP:   net.IP(ulaAddr),
+		Mask: net.CIDRMask(48, 128),
+	}
+	return ipNet.String(), nil
+}
+
 // configureIPPools ensures that default IP pools are created (unless explicitly
 // requested otherwise).
-func configureIPPools(client *client.Client) {
+func configureIPPools(ctx context.Context, client client.Interface) {
 	// Read in environment variables for use here and later.
 	ipv4Pool := os.Getenv("CALICO_IPV4POOL_CIDR")
 	ipv6Pool := os.Getenv("CALICO_IPV6POOL_CIDR")
 
 	if strings.ToLower(os.Getenv("NO_DEFAULT_POOLS")) == "true" {
 		if len(ipv4Pool) > 0 || len(ipv6Pool) > 0 {
-			fatal("Invalid configuration with NO_DEFAULT_POOLS defined and CALICO_IPV4POOL_CIDR or CALICO_IPV6POOL_CIDR defined.")
+			log.Error("Invalid configuration with NO_DEFAULT_POOLS defined and CALICO_IPV4POOL_CIDR or CALICO_IPV6POOL_CIDR defined.")
 			terminate()
 		}
 
@@ -536,9 +666,9 @@ func configureIPPools(client *client.Client) {
 	ipv4IpipModeEnvVar := strings.ToLower(os.Getenv("CALICO_IPV4POOL_IPIP"))
 
 	// Get a list of all IP Pools
-	poolList, err := client.IPPools().List(api.IPPoolMetadata{})
+	poolList, err := client.IPPools().List(ctx, options.ListOptions{})
 	if err != nil {
-		fatal("Unable to fetch IP pool list: %s", err)
+		log.WithError(err).Error("Unable to fetch IP pool list")
 		terminate()
 		return // not really needed but allows testing to function
 	}
@@ -547,7 +677,11 @@ func configureIPPools(client *client.Client) {
 	ipv4Present := false
 	ipv6Present := false
 	for _, p := range poolList.Items {
-		version := p.Metadata.CIDR.Version()
+		ip, _, err := cnet.ParseCIDR(p.Spec.CIDR)
+		if err != nil {
+			log.Warnf("Error parsing CIDR '%s'. Skipping the IPPool.", p.Spec.CIDR)
+		}
+		version := ip.Version()
 		ipv4Present = ipv4Present || (version == 4)
 		ipv6Present = ipv6Present || (version == 6)
 		if ipv4Present && ipv6Present {
@@ -559,20 +693,24 @@ func configureIPPools(client *client.Client) {
 	if ipv4Pool == "" {
 		ipv4Pool = DEFAULT_IPV4_POOL_CIDR
 	}
-	_, ipv4Cidr, err := net.ParseCIDR(ipv4Pool)
+	_, ipv4Cidr, err := cnet.ParseCIDR(ipv4Pool)
 	if err != nil || ipv4Cidr.Version() != 4 {
-		fatal("Invalid CIDR specified in CALICO_IPV4POOL_CIDR '%s'", ipv4Pool)
+		log.Errorf("Invalid CIDR specified in CALICO_IPV4POOL_CIDR '%s'", ipv4Pool)
 		terminate()
 		return // not really needed but allows testing to function
 	}
 
-	// Read IPV6 CIDR from env if set and parse then check it for errors
+	// If no IPv6 pool is specified, generate one.
 	if ipv6Pool == "" {
-		ipv6Pool = DEFAULT_IPV6_POOL_CIDR
+		ipv6Pool, err = GenerateIPv6ULAPrefix()
+		if err != nil {
+			log.Errorf("Failed to generate an IPv6 default pool")
+			terminate()
+		}
 	}
-	_, ipv6Cidr, err := net.ParseCIDR(ipv6Pool)
+	_, ipv6Cidr, err := cnet.ParseCIDR(ipv6Pool)
 	if err != nil || ipv6Cidr.Version() != 6 {
-		fatal("Invalid CIDR specified in CALICO_IPV6POOL_CIDR '%s'", ipv6Pool)
+		log.Errorf("Invalid CIDR specified in CALICO_IPV6POOL_CIDR '%s'", ipv6Pool)
 		terminate()
 		return // not really needed but allows testing to function
 	}
@@ -581,13 +719,13 @@ func configureIPPools(client *client.Client) {
 	if !ipv4Present {
 		log.Debug("Create default IPv4 IP pool")
 		outgoingNATEnabled := evaluateENVBool("CALICO_IPV4POOL_NAT_OUTGOING", true)
-		createIPPool(client, ipv4Cidr, ipv4IpipModeEnvVar, outgoingNATEnabled)
+		createIPPool(ctx, client, ipv4Cidr, DEFAULT_IPV4_POOL_NAME, ipv4IpipModeEnvVar, outgoingNATEnabled)
 	}
 	if !ipv6Present && ipv6Supported() {
 		log.Debug("Create default IPv6 IP pool")
 		outgoingNATEnabled := evaluateENVBool("CALICO_IPV6POOL_NAT_OUTGOING", false)
 
-		createIPPool(client, ipv6Cidr, string(ipip.Undefined), outgoingNATEnabled)
+		createIPPool(ctx, client, ipv6Cidr, DEFAULT_IPV6_POOL_NAME, string(api.IPIPModeNever), outgoingNATEnabled)
 	}
 }
 
@@ -611,63 +749,74 @@ func ipv6Supported() bool {
 
 // createIPPool creates an IP pool using the specified CIDR.  This
 // method is a no-op if the pool already exists.
-func createIPPool(client *client.Client, cidr *net.IPNet, ipipModeName string, isNATOutgoingEnabled bool) {
+func createIPPool(ctx context.Context, client client.Interface, cidr *cnet.IPNet, poolName, ipipModeName string, isNATOutgoingEnabled bool) {
 	version := cidr.Version()
-	ipipMode := ipip.Mode(ipipModeName)
+	var ipipMode api.IPIPMode
 
-	// off is not an actual valid value so switch it to an empty string
-	if ipipModeName == "off" {
-		ipipMode = ipip.Undefined
+	switch strings.ToLower(ipipModeName) {
+	case "", "off", "never":
+		ipipMode = api.IPIPModeNever
+	case "crosssubnet", "cross-subnet":
+		ipipMode = api.IPIPModeCrossSubnet
+	case "always":
+		ipipMode = api.IPIPModeAlways
+	default:
+		log.Errorf("Unrecognized IPIP mode specified in CALICO_IPV4POOL_IPIP '%s'", ipipModeName)
+		terminate()
 	}
 
 	pool := &api.IPPool{
-		Metadata: api.IPPoolMetadata{
-			CIDR: *cidr,
+		ObjectMeta: metav1.ObjectMeta{
+			Name: poolName,
 		},
 		Spec: api.IPPoolSpec{
+			CIDR:        cidr.String(),
 			NATOutgoing: isNATOutgoingEnabled,
-			IPIP: &api.IPIPConfiguration{
-				Enabled: ipipMode != ipip.Undefined,
-				Mode:    ipipMode,
-			},
+			IPIPMode:    ipipMode,
 		},
-	}
-
-	// Use off when logging for disabled instead of blank
-	if ipipMode == ipip.Undefined {
-		ipipModeName = "off"
 	}
 
 	log.Infof("Ensure default IPv%d pool is created. IPIP mode: %s", version, ipipModeName)
 
 	// Create the pool.  There is a small chance that another node may
 	// beat us to it, so handle the fact that the pool already exists.
-	if _, err := client.IPPools().Create(pool); err != nil {
-		if _, ok := err.(errors.ErrorResourceAlreadyExists); !ok {
-			fatal("Failed to create default IPv%d IP pool: %s", version, err)
+	if _, err := client.IPPools().Create(ctx, pool, options.SetOptions{}); err != nil {
+		if _, ok := err.(cerrors.ErrorResourceAlreadyExists); !ok {
+			log.WithError(err).Errorf("Failed to create default IPv%d IP pool: %s", version)
 			terminate()
 		}
 	} else {
-		message("Created default IPv%d pool (%s) with NAT outgoing %t. IPIP mode: %s",
+		log.Infof("Created default IPv%d pool (%s) with NAT outgoing %t. IPIP mode: %s",
 			version, cidr, isNATOutgoingEnabled, ipipModeName)
 	}
 }
 
 // checkConflictingNodes checks whether any other nodes have been configured
 // with the same IP addresses.
-func checkConflictingNodes(client *client.Client, node *api.Node) {
+func checkConflictingNodes(ctx context.Context, client client.Interface, node *api.Node) (v4conflict, v6conflict bool, retErr error) {
 	// Get the full set of nodes.
 	var nodes []api.Node
-	if nodeList, err := client.Nodes().List(api.NodeMetadata{}); err != nil {
-		fatal("Unable to query node confguration: %s", err)
-		terminate()
+	if nodeList, err := client.Nodes().List(ctx, options.ListOptions{}); err != nil {
+		log.WithError(err).Errorf("Unable to query node confguration")
+		retErr = err
+		return
 	} else {
 		nodes = nodeList.Items
 	}
 
-	ourIPv4 := node.Spec.BGP.IPv4Address
-	ourIPv6 := node.Spec.BGP.IPv6Address
-	errored := false
+	ourIPv4, _, err := cnet.ParseCIDROrIP(node.Spec.BGP.IPv4Address)
+	if err != nil && node.Spec.BGP.IPv4Address != "" {
+		log.WithError(err).Errorf("Error parsing IPv4 CIDR '%s' for node '%s'", node.Spec.BGP.IPv4Address, node.Name)
+		retErr = err
+		return
+	}
+	ourIPv6, _, err := cnet.ParseCIDROrIP(node.Spec.BGP.IPv6Address)
+	if err != nil && node.Spec.BGP.IPv6Address != "" {
+		log.WithError(err).Errorf("Error parsing IPv6 CIDR '%s' for node '%s'", node.Spec.BGP.IPv6Address, node.Name)
+		retErr = err
+		return
+	}
+
 	for _, theirNode := range nodes {
 		if theirNode.Spec.BGP == nil {
 			// Skip nodes that don't have BGP configured.  We know
@@ -675,50 +824,52 @@ func checkConflictingNodes(client *client.Client, node *api.Node) {
 			// this check after configuring BGP.
 			continue
 		}
-		theirIPv4 := theirNode.Spec.BGP.IPv4Address
-		theirIPv6 := theirNode.Spec.BGP.IPv6Address
+
+		theirIPv4, _, err := cnet.ParseCIDROrIP(theirNode.Spec.BGP.IPv4Address)
+		if err != nil && theirNode.Spec.BGP.IPv4Address != "" {
+			log.WithError(err).Errorf("Error parsing IPv4 CIDR '%s' for node '%s'", theirNode.Spec.BGP.IPv4Address, theirNode.Name)
+			retErr = err
+			return
+		}
+
+		theirIPv6, _, err := cnet.ParseCIDROrIP(theirNode.Spec.BGP.IPv6Address)
+		if err != nil && theirNode.Spec.BGP.IPv6Address != "" {
+			log.WithError(err).Errorf("Error parsing IPv6 CIDR '%s' for node '%s'", theirNode.Spec.BGP.IPv6Address, theirNode.Name)
+			retErr = err
+			return
+		}
 
 		// If this is our node (based on the name), check if the IP
 		// addresses have changed.  If so warn the user as it could be
 		// an indication of multiple nodes using the same name.  This
 		// is not an error condition as the IPs could actually change.
-		if theirNode.Metadata.Name == node.Metadata.Name {
-			if theirIPv4 != nil && ourIPv4 != nil && !theirIPv4.IP.Equal(ourIPv4.IP) {
-				warning("Calico node '%s' IPv4 address has changed:",
-					theirNode.Metadata.Name)
-				message(" -  This could happen if multiple nodes are configured with the same name")
-				message(" -  Original IP: %s", theirIPv4.IP)
-				message(" -  Updated IP: %s", ourIPv4.IP)
+		if theirNode.Name == node.Name {
+			if theirIPv4.IP != nil && ourIPv4.IP != nil && !theirIPv4.IP.Equal(ourIPv4.IP) {
+				fields := log.Fields{"node": theirNode.Name, "original": theirIPv4.String(), "updated": ourIPv4.String()}
+				log.WithFields(fields).Warnf("IPv4 address has changed. This could happen if there are multiple nodes with the same name.")
 			}
-			if theirIPv6 != nil && ourIPv6 != nil && !theirIPv6.IP.Equal(ourIPv6.IP) {
-				warning("Calico node '%s' IPv6 address has changed:",
-					theirNode.Metadata.Name)
-				message(" -  This could happen if multiple nodes are configured with the same name")
-				message(" -  Original IP: %s", theirIPv6.IP)
-				message(" -  Updated IP: %s", ourIPv6.IP)
+			if theirIPv6.IP != nil && ourIPv6.IP != nil && !theirIPv6.IP.Equal(ourIPv6.IP) {
+				fields := log.Fields{"node": theirNode.Name, "original": theirIPv6.String(), "updated": ourIPv6.String()}
+				log.WithFields(fields).Warnf("IPv6 address has changed. This could happen if there are multiple nodes with the same name.")
 			}
 			continue
 		}
 
 		// Check that other nodes aren't using the same IP addresses.
 		// This is an error condition.
-		if theirIPv4 != nil && ourIPv4 != nil && theirIPv4.IP.Equal(ourIPv4.IP) {
-			message("Calico node '%s' is already using the IPv4 address %s:",
-				theirNode.Metadata.Name, ourIPv4.IP)
-			message(" -  Check the node configuration to remove the IP address conflict")
-			errored = true
+		if theirIPv4.IP != nil && ourIPv4.IP != nil && theirIPv4.IP.Equal(ourIPv4.IP) {
+			log.Warnf("Calico node '%s' is already using the IPv4 address %s.", theirNode.Name, ourIPv4.String())
+			retErr = fmt.Errorf("IPv4 address conflict")
+			v4conflict = true
 		}
-		if theirIPv6 != nil && ourIPv6 != nil && theirIPv6.IP.Equal(ourIPv6.IP) {
-			message("Calico node '%s' is already using the IPv6 address %s:",
-				theirNode.Metadata.Name, ourIPv6.IP)
-			message(" -  Check the node configuration to remove the IP address conflict")
-			errored = true
-		}
-	}
 
-	if errored {
-		terminate()
+		if theirIPv6.IP != nil && ourIPv6.IP != nil && theirIPv6.IP.Equal(ourIPv6.IP) {
+			log.Warnf("Calico node '%s' is already using the IPv6 address %s.", theirNode.Name, ourIPv6.String())
+			retErr = fmt.Errorf("IPv6 address conflict")
+			v6conflict = true
+		}
 	}
+	return
 }
 
 // Checks that the filesystem is as expected and fix it if possible
@@ -732,11 +883,23 @@ func ensureFilesystemAsExpected() {
 		if _, err := os.Stat(runDir); err != nil {
 			// Create the runDir
 			if err = os.MkdirAll(runDir, os.ModeDir); err != nil {
-				fatal("Unable to create '%s'", runDir)
+				log.Errorf("Unable to create '%s'", runDir)
 				terminate()
 			}
-			warning("%s was not mounted, 'calicoctl node status' may provide incomplete status information", runDir)
+			log.Warnf("Expected %s to be mounted into the container but it wasn't present. 'calicoctl node status' may provide incomplete status information", runDir)
 		}
+	}
+
+	// Make sure the /var/lib/calico directory exists.
+	libDir := "/var/lib/calico"
+	// Check if directory already exists
+	if _, err := os.Stat(libDir); err != nil {
+		// Create the libDir
+		if err = os.MkdirAll(libDir, os.ModeDir); err != nil {
+			log.Errorf("Unable to create '%s'", libDir)
+			terminate()
+		}
+		log.Warnf("Expected %s to be mounted into the container but it wasn't present. Node name may not be detected properly", libDir)
 	}
 
 	// Ensure the log directory exists but only if logging to file is enabled.
@@ -746,10 +909,10 @@ func ensureFilesystemAsExpected() {
 		if _, err := os.Stat(logDir); err != nil {
 			// Create the logDir
 			if err = os.MkdirAll(logDir, os.ModeDir); err != nil {
-				fatal("Unable to create '%s'", logDir)
+				log.Errorf("Unable to create '%s'", logDir)
 				terminate()
 			}
-			warning("%s was not mounted, 'calicoctl node diags' will not be able to collect logs", logDir)
+			log.Warnf("Expected %s to be mounted into the container but it wasn't present. 'calicoctl node diags' will not be able to collect calico/node logs", logDir)
 		}
 	}
 
@@ -757,17 +920,66 @@ func ensureFilesystemAsExpected() {
 
 // ensureDefaultConfig ensures all of the required default settings are
 // configured.
-func ensureDefaultConfig(cfg *api.CalicoAPIConfig, c *client.Client, node *api.Node) error {
+func ensureDefaultConfig(ctx context.Context, cfg *apiconfig.CalicoAPIConfig, c client.Interface, node *api.Node) error {
+	// Ensure the ClusterInformation is populated.
+	// Get the ClusterType from ENV var. This is set from the manifest.
+	clusterType := os.Getenv("CLUSTER_TYPE")
+	c.EnsureInitialized(ctx, VERSION, clusterType)
+
 	// By default we set the global reporting interval to 0 - this is
 	// different from the defaults defined in Felix.
 	//
 	// Logging to file is disabled in the felix.cfg config file.  This
 	// should always be disabled for calico/node.  By default we log to
 	// screen - set the default logging value that we desire.
-	if err := ensureGlobalFelixConfig(c, "ReportingIntervalSecs", "0"); err != nil {
-		return err
-	} else if err = ensureGlobalFelixConfig(c, "LogSeverityScreen", client.GlobalDefaultLogLevel); err != nil {
-		return err
+	felixConf, err := c.FelixConfigurations().Get(ctx, globalFelixConfigName, options.GetOptions{})
+	if err != nil {
+		// Create the default config if it doesn't already exist.
+		if _, ok := err.(cerrors.ErrorResourceDoesNotExist); ok {
+			newFelixConf := api.NewFelixConfiguration()
+			newFelixConf.Name = globalFelixConfigName
+			newFelixConf.Spec.ReportingInterval = &metav1.Duration{Duration: 0}
+			newFelixConf.Spec.LogSeverityScreen = defaultLogSeverity
+			_, err = c.FelixConfigurations().Create(ctx, newFelixConf, options.SetOptions{})
+			if err != nil {
+				if conflict, ok := err.(cerrors.ErrorResourceAlreadyExists); ok {
+					log.Infof("Ignoring conflict when setting value %s", conflict.Identifier)
+				} else {
+					log.WithError(err).WithField("FelixConfig", newFelixConf).Errorf("Error creating Felix global config")
+					return err
+				}
+			}
+		} else {
+			log.WithError(err).WithField("FelixConfig", globalFelixConfigName).Errorf("Error getting Felix global config")
+			return err
+		}
+	} else {
+		updateNeeded := false
+		if felixConf.Spec.ReportingInterval == nil {
+			felixConf.Spec.ReportingInterval = &metav1.Duration{Duration: 0}
+			updateNeeded = true
+		} else {
+			log.WithField("ReportingInterval", felixConf.Spec.ReportingInterval).Debug("Global Felix value already assigned")
+		}
+
+		if felixConf.Spec.LogSeverityScreen == "" {
+			felixConf.Spec.LogSeverityScreen = defaultLogSeverity
+			updateNeeded = true
+		} else {
+			log.WithField("LogSeverityScreen", felixConf.Spec.LogSeverityScreen).Debug("Global Felix value already assigned")
+		}
+
+		if updateNeeded {
+			_, err = c.FelixConfigurations().Update(ctx, felixConf, options.SetOptions{})
+			if err != nil {
+				if conflict, ok := err.(cerrors.ErrorResourceUpdateConflict); ok {
+					log.Infof("Ignoring conflict when setting value %s", conflict.Identifier)
+				} else {
+					log.WithError(err).WithField("FelixConfig", felixConf).Errorf("Error updating Felix global config")
+					return err
+				}
+			}
+		}
 	}
 
 	// Configure Felix to allow traffic from the containers to the host (if
@@ -776,141 +988,73 @@ func ensureDefaultConfig(cfg *api.CalicoAPIConfig, c *client.Client, node *api.N
 	// for containers to speak to services running on the host (e.g. k8s
 	// pods speaking to k8s api-server, and mesos tasks registering with agent
 	// on startup).  Note: KDD does not yet support per-node felix config.
-	if cfg.Spec.DatastoreType != api.Kubernetes {
-		if err := ensureNodeFelixConfig(c, node.Metadata.Name, "DefaultEndpointToHostAction", "RETURN"); err != nil {
-			return err
+	if cfg.Spec.DatastoreType != apiconfig.Kubernetes {
+		felixNodeCfg, err := c.FelixConfigurations().Get(ctx, fmt.Sprintf("%s%s", felixNodeConfigNamePrefix, node.Name), options.GetOptions{})
+		if err != nil {
+			// Create the default config if it doesn't already exist.
+			if _, ok := err.(cerrors.ErrorResourceDoesNotExist); ok {
+				newFelixNodeCfg := api.NewFelixConfiguration()
+				newFelixNodeCfg.Name = fmt.Sprintf("%s%s", felixNodeConfigNamePrefix, node.Name)
+				newFelixNodeCfg.Spec.DefaultEndpointToHostAction = "Return"
+				_, err = c.FelixConfigurations().Create(ctx, newFelixNodeCfg, options.SetOptions{})
+				if err != nil {
+					if exists, ok := err.(cerrors.ErrorResourceAlreadyExists); ok {
+						log.Infof("Ignoring resource exists error when setting value %s", exists.Identifier)
+					} else {
+						log.WithError(err).WithField("FelixConfig", newFelixNodeCfg).Errorf("Error creating Felix node config")
+						return err
+					}
+				}
+			} else {
+				log.WithError(err).WithField("FelixConfig", felixNodeConfigNamePrefix).Errorf("Error getting Felix node config")
+				return err
+			}
+		} else {
+			if felixNodeCfg.Spec.DefaultEndpointToHostAction == "" {
+				felixNodeCfg.Spec.DefaultEndpointToHostAction = "Return"
+				_, err = c.FelixConfigurations().Update(ctx, felixNodeCfg, options.SetOptions{})
+				if err != nil {
+					if conflict, ok := err.(cerrors.ErrorResourceUpdateConflict); ok {
+						log.Infof("Ignoring conflict when setting value %s", conflict.Identifier)
+					} else {
+						log.WithError(err).WithField("FelixConfig", felixNodeCfg).Errorf("Error updating Felix node config")
+						return err
+					}
+				}
+			} else {
+				log.WithField("DefaultEndpointToHostAction", felixNodeCfg.Spec.DefaultEndpointToHostAction).Debug("Host Felix value already assigned")
+			}
 		}
 	}
 
-	// Store the Calico Version as a global felix config setting.
-	if err := c.Config().SetFelixConfig("CalicoVersion", "", VERSION); err != nil {
-		return err
-	}
-
-	// Update the ClusterType with the type in CLUSTER_TYPE
-	if err := updateClusterType(c, "ClusterType", os.Getenv("CLUSTER_TYPE")); err != nil {
-		return err
-	}
-
-	// Set the default values for some of the global BGP config values and
-	// per-node directory structure. - this makes it easier to change the
-	// default values in the future without impacting existing clusters.
-	if err := ensureGlobalBGPConfig(c, "NodeMeshEnabled", fmt.Sprintf("%v", client.GlobalDefaultNodeToNodeMesh)); err != nil {
-		return err
-	} else if err := ensureGlobalBGPConfig(c, "AsNumber", strconv.Itoa(client.GlobalDefaultASNumber)); err != nil {
-		return err
-	} else if err = ensureGlobalBGPConfig(c, "LogLevel", client.GlobalDefaultLogLevel); err != nil {
-		return err
-	} else if err = c.Backend.EnsureCalicoNodeInitialized(node.Metadata.Name); err != nil {
-		return err
-	}
 	return nil
 }
 
-// ensureGlobalFelixConfig ensures that the supplied global felix config value
-// is initialized, and if not initialize it with the supplied default.
-func ensureGlobalFelixConfig(c *client.Client, key, def string) error {
-	if val, assigned, err := c.Config().GetFelixConfig(key, ""); err != nil {
+// ensureKDDMigrated ensures any data migration needed is done.
+func ensureKDDMigrated(cfg *apiconfig.CalicoAPIConfig, cv3 client.Interface) error {
+	cv1, err := clients.LoadKDDClientV1FromAPIConfigV3(cfg)
+	if err != nil {
 		return err
-	} else if !assigned {
-		return c.Config().SetFelixConfig(key, "", def)
-	} else {
-		log.WithField(key, val).Debug("Global Felix value already assigned")
-		return nil
 	}
-}
-
-// ensureNodeFelixConfig ensures that the supplied felix config value
-// is initialized, and if not initialize it with the supplied default.
-func ensureNodeFelixConfig(c *client.Client, host, key, def string) error {
-	if val, assigned, err := c.Config().GetFelixConfig(key, host); err != nil {
+	m := migrator.New(cv3, cv1, nil)
+	yes, err := m.ShouldMigrate()
+	if err != nil {
 		return err
-	} else if !assigned {
-		return c.Config().SetFelixConfig(key, host, def)
-	} else {
-		log.WithField(key, val).Debug("Host Felix value already assigned")
-		return nil
-	}
-}
-
-// updateClusterType ensures that the ClusterType in the Felix global
-// config has the data contained in the passed in clusterType.  This includes
-// merging what was already set in ClusterType with the passed in clusterType.
-func updateClusterType(c *client.Client, key, clusterType string) error {
-	// If no data is passed in to add, then nothing to do.
-	if clusterType == "" {
-		return nil
-	}
-	global := ""
-	if val, assigned, err := c.Config().GetFelixConfig("ClusterType", global); err != nil {
-		return err
-	} else if !assigned {
-		return c.Config().SetFelixConfig(key, global, clusterType)
-	} else if val == "" {
-		return c.Config().SetFelixConfig(key, global, clusterType)
-	} else {
-		// If we're here then both val and clusterType have data, this means
-		// the Split will not have any empty string values
-		updateNeeded := false // keep track if we add any elements
-		cts := strings.Split(val, ",")
-		for _, ct := range strings.Split(clusterType, ",") {
-			found := false
-			for _, x := range cts {
-				if ct == x {
-					found = true
-					break
-				}
-			}
-			if !found {
-				cts = append(cts, ct)
-				updateNeeded = true
-			}
+	} else if yes {
+		log.Infof("Running migration")
+		if _, err = m.Migrate(); err != nil {
+			return errors.New(fmt.Sprintf("Migration failed: %v", err))
 		}
-
-		// If no cluster types need adding then we're done
-		if !updateNeeded {
-			return nil
-		}
-
-		newClusterTypes := strings.Join(cts, ",")
-
-		return c.Config().SetFelixConfig(key, global, newClusterTypes)
-	}
-}
-
-// ensureGlobalBGPConfig ensures that the supplied global BGP config value
-// is initialized, and if not initialize it with the supplied default.
-func ensureGlobalBGPConfig(c *client.Client, key, def string) error {
-	if val, assigned, err := c.Config().GetBGPConfig(key, ""); err != nil {
-		return err
-	} else if !assigned {
-		return c.Config().SetBGPConfig(key, "", def)
+		log.Infof("Migration successful")
 	} else {
-		log.WithField(key, val).Debug("Global BGP value already assigned")
-		return nil
+		log.Debugf("Migration is not needed")
 	}
-}
 
-// message prints a message to screen and to log.  A newline terminator is
-// not required in the format string.
-func message(format string, args ...interface{}) {
-	fmt.Printf(format+"\n", args...)
-}
-
-// warning prints a warning to screen and to log.  A newline terminator is
-// not required in the format string.
-func warning(format string, args ...interface{}) {
-	fmt.Printf("WARNING: "+format+"\n", args...)
-}
-
-// fatal prints a fatal message to screen and to log.  A newline terminator is
-// not required in the format string.
-func fatal(format string, args ...interface{}) {
-	fmt.Printf("ERROR: "+format+"\n", args...)
+	return nil
 }
 
 // terminate prints a terminate message and exists with status 1.
 func terminate() {
-	message("Terminating")
+	log.Warn("Terminating")
 	exitFunction(1)
 }

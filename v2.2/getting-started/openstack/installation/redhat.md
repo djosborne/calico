@@ -1,5 +1,6 @@
 ---
 title: Red Hat Enterprise Linux 7 Packaged Install Instructions
+canonical_url: 'https://docs.projectcalico.org/v2.6/getting-started/openstack/installation/redhat'
 ---
 
 For this version of Calico, with OpenStack on RHEL 7 or CentOS 7, we recommend
@@ -12,8 +13,6 @@ using OpenStack Liberty or later.
 > operation.  You can avoid this bug by:
 >
 > - using Newton or later (recommended)
->
-> - or using RHEL/CentOS 7.2, instead of 7.3
 >
 > - or manually [patching](https://review.openstack.org/#/c/425637/) your Nova
 >   install on each compute node.
@@ -35,7 +34,7 @@ sections.
 > Following the upgrade to use etcd as a data store, Calico
 > currently only supports RHEL 7 and above. If support on RHEL 6.x
 > or other versions of Linux is important to you, then please [let
-> us know](http://www.projectcalico.org/contact/).
+> us know](https://www.projectcalico.org/contact/).
 >
 
 ## Prerequisites
@@ -274,8 +273,6 @@ On each control node, perform the following steps:
     > left around.
     >
 
-2.  Run `yum update`. This will bring in Calico-specific updates to `dnsmasq`.
-
 3.  Edit the `/etc/neutron/neutron.conf` file. In the \[DEFAULT\]
     section:
     -   Find the line beginning with `core_plugin`, and change it to
@@ -391,8 +388,6 @@ On each compute node, perform the following steps:
     ```
         neutron agent-delete <agent-id>
     ```
-
-4.  Run `yum update`. This will bring in Calico-specific updates to `dnsmasq`.
 
 5.  Install Neutron infrastructure code on the compute host:
 

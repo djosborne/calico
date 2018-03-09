@@ -1,5 +1,6 @@
 ---
 title: Integration Guide
+canonical_url: 'https://docs.projectcalico.org/v3.0/getting-started/kubernetes/installation/integration'
 ---
 
 
@@ -207,7 +208,7 @@ The `kubelet` can be configured to use Calico by starting it with the following 
 For Kubernetes versions prior to v1.4.0, the `cni-conf-dir` and `cni-bin-dir` options are
 not supported.  Use `--network-plugin-dir=/etc/cni/net.d` instead.
 
-See the [`kubelet` documentation](http://kubernetes.io/docs/admin/kubelet/)
+See the [`kubelet` documentation](https://kubernetes.io/docs/reference/generated/kubelet/)
 for more details.
 
 ### Configuring the Kube-Proxy

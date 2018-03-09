@@ -1,8 +1,9 @@
 ---
 title: Command Reference
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/calicoctl/commands/'
 ---
 
-The command line tool, `calicoctl`, makes it easy to manage Calico network
+The command line tool, `calicoctl`, makes it easy to manage {{site.prodname}} network
 and security policy.
 
 This section is a command line reference for calicoctl, organised based on 
@@ -25,7 +26,7 @@ Usage:
               name.
     get       Get a resource identified by file, stdin or resource type and 
               name.
-    config    Manage system-wide and low-level node configuration options.
+    convert   Convert config files between different API versions.
     ipam      IP address management.
     node      Calico node management.
     version   Display the version of calicoctl.
@@ -53,7 +54,16 @@ organized by top level command.
 -  [calicoctl apply]({{site.baseurl}}/{{page.version}}/reference/calicoctl/commands/apply)
 -  [calicoctl delete]({{site.baseurl}}/{{page.version}}/reference/calicoctl/commands/delete)
 -  [calicoctl get]({{site.baseurl}}/{{page.version}}/reference/calicoctl/commands/get)
--  [calicoctl config]({{site.baseurl}}/{{page.version}}/reference/calicoctl/commands/config)
 -  [calicoctl ipam]({{site.baseurl}}/{{page.version}}/reference/calicoctl/commands/ipam)
 -  [calicoctl node]({{site.baseurl}}/{{page.version}}/reference/calicoctl/commands/node)
+-  [calicoctl convert]({{site.baseurl}}/{{page.version}}/reference/calicoctl/commands/convert)
 -  [calicoctl version]({{site.baseurl}}/{{page.version}}/reference/calicoctl/commands/version)
+
+## Modifying low-level component configurations
+
+In order to update low-level Felix or BGP settings (`FelixConfiguration` and `BGPConfiguration` resource types):
+1. Get the appropriate resource and store the yaml output in a file using `calicoctl get <resource type> <resource name> -o yaml --export > config.yaml`.
+1. Modify the saved resource file.
+1. Update the resource using `apply` or `replace` command: `calicoctl replace -f config.yaml`.
+
+See [Configuring Felix]({{site.baseurl}}/{{page.version}}/reference/felix/configuration) for more details.

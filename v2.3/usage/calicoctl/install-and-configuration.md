@@ -1,6 +1,6 @@
 ---
 title: Installing and Configuring calicoctl
-redirect_from: latest/usage/calicoctl/install-and-configuration
+canonical_url: 'https://docs.projectcalico.org/v3.0/usage/calicoctl/install'
 ---
 
 This document outlines how to install and configure calicoctl which is the

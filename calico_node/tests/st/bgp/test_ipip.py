@@ -14,17 +14,22 @@
 import json
 import re
 import subprocess
+import logging
 
 from netaddr import IPAddress, IPNetwork
 from nose_parameterized import parameterized
+from time import sleep
+
 from tests.st.test_base import TestBase
 from tests.st.utils.docker_host import DockerHost, CLUSTER_STORE_DOCKER_OPTIONS
 from tests.st.utils.constants import DEFAULT_IPV4_POOL_CIDR
 from tests.st.utils.route_reflector import RouteReflectorCluster
-from tests.st.utils.utils import check_bird_status, retry_until_success
-from time import sleep
+from tests.st.utils.utils import check_bird_status, retry_until_success, \
+        update_bgp_config
 
 from .peer import create_bgp_peer
+
+logger = logging.getLogger(__name__)
 
 """
 Test calico IPIP behaviour.
@@ -36,7 +41,8 @@ class TestIPIP(TestBase):
 
     @parameterized.expand([
         ('bird',),
-        ('gobgp',),
+        # TODO: Add back when gobgp is updated to work with libcalico-go v3 api
+        # ('gobgp',),
     ])
     def test_ipip(self, backend):
         """
@@ -53,12 +59,8 @@ class TestIPIP(TestBase):
                         additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=False) as host2:
 
-            # Before starting the node, create the default IP pool using the
-            # v1.0.2 calicoctl.  For calicoctl v1.1.0+, a new IPIP mode field
-            # is introduced - by testing with an older pool version validates
-            # the IPAM BIRD templates function correctly without the mode field.
-            self.pool_action(host1, "create", DEFAULT_IPV4_POOL_CIDR, False,
-                           calicoctl_version="v1.0.2")
+            # Create an IP pool with IP-in-IP disabled.
+            self.pool_action(host1, "create", DEFAULT_IPV4_POOL_CIDR, ipip_mode="Never")
 
             # Autodetect the IP addresses - this should ensure the subnet is
             # correctly configured.
@@ -88,49 +90,42 @@ class TestIPIP(TestBase):
             # and no IPIP because it is easier to look for a change of state
             # than to look for state remaining the same.
 
-            # Turn on IPIP with a v1.0.2 calicoctl and check that the
-            # IPIP tunnel is being used.
-            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, True,
-                             calicoctl_version="v1.0.2")
+            # Turn on IPIP and check that the IPIP tunnel is being used.
+            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, ipip_mode="Always")
             self.assert_ipip_routing(host1, workload_host1, workload_host2,
                                      True)
 
-            # Turn off IPIP using the latest version of calicoctl and check that
-            # IPIP tunnel is not being used.  We'll use the latest version of
-            # calicoctl for the remaining tests.
-            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, False)
+            # Turn off IPIP and check that IPIP tunnel is not being used.
+            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, ipip_mode="Never")
             self.assert_ipip_routing(host1, workload_host1, workload_host2,
                                      False)
 
             # Turn on IPIP, default mode (which is always use IPIP), and check
             # IPIP tunnel is being used.
-            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, True)
+            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, ipip_mode="Always")
             self.assert_ipip_routing(host1, workload_host1, workload_host2,
                                      True)
 
             # Turn off IPIP and check IPIP tunnel is not being used.
-            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, False)
+            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, ipip_mode="Never")
             self.assert_ipip_routing(host1, workload_host1, workload_host2,
                                      False)
 
             # Turn on IPIP mode "always", and check IPIP tunnel is being used.
-            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, True,
-                             ipip_mode="always")
+            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, ipip_mode="Always")
             self.assert_ipip_routing(host1, workload_host1, workload_host2,
                                      True)
 
             # Turn on IPIP mode "cross-subnet", since both hosts will be on the
             # same subnet, IPIP should not be used.
-            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, True,
-                             ipip_mode="cross-subnet")
+            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, ipip_mode="CrossSubnet")
             self.assert_ipip_routing(host1, workload_host1, workload_host2,
                                      False)
 
             # Set the BGP subnet on both node resources to be a /32.  This will
             # fool Calico into thinking they are on different subnets.  IPIP
             # routing should be used.
-            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, True,
-                             ipip_mode="cross-subnet")
+            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, ipip_mode="CrossSubnet")
             self.modify_subnet(host1, 32)
             self.modify_subnet(host2, 32)
             self.assert_ipip_routing(host1, workload_host1, workload_host2,
@@ -140,58 +135,144 @@ class TestIPIP(TestBase):
         with DockerHost('host', dind=False, start_calico=False) as host:
             # Set up first pool before Node is started, to ensure we get tunl IP on boot
             ipv4_pool = IPNetwork("10.0.1.0/24")
-            self.pool_action(host, "create", ipv4_pool, True)
+            self.pool_action(host, "create", ipv4_pool, ipip_mode="Always")
             host.start_calico_node()
             self.assert_tunl_ip(host, ipv4_pool, expect=True)
 
             # Disable the IP Pool, and make sure the tunl IP is not from this IP pool anymore.
-            self.pool_action(host, "apply", ipv4_pool, True, disabled=True)
+            self.pool_action(host, "apply", ipv4_pool, ipip_mode="Always", disabled=True)
             self.assert_tunl_ip(host, ipv4_pool, expect=False)
 
             # Re-enable the IP pool and make sure the tunl IP is assigned from that IP pool again.
-            self.pool_action(host, "apply", ipv4_pool, True)
+            self.pool_action(host, "apply", ipv4_pool, ipip_mode="Always")
             self.assert_tunl_ip(host, ipv4_pool, expect=True)
 
             # Test that removing pool removes the tunl IP.
-            self.pool_action(host, "delete", ipv4_pool, True)
+            self.pool_action(host, "delete", ipv4_pool, ipip_mode="Always")
             self.assert_tunl_ip(host, ipv4_pool, expect=False)
 
             # Test that re-adding the pool triggers the confd watch and we get an IP
-            self.pool_action(host, "create", ipv4_pool, True)
+            self.pool_action(host, "create", ipv4_pool, ipip_mode="Always")
             self.assert_tunl_ip(host, ipv4_pool, expect=True)
 
             # Test that by adding another pool, then deleting the first,
             # we remove the original IP, and allocate a new one from the new pool
             new_ipv4_pool = IPNetwork("192.168.0.0/16")
-            self.pool_action(host, "create", new_ipv4_pool, True)
-            self.pool_action(host, "delete", ipv4_pool, True)
+            self.pool_action(host, "create", new_ipv4_pool, ipip_mode="Always", pool_name="pool-b")
+            self.pool_action(host, "delete", ipv4_pool)
             self.assert_tunl_ip(host, new_ipv4_pool)
 
-    def pool_action(self, host, action, cidr, ipip, disabled=False, ipip_mode="", calicoctl_version=None):
+    @parameterized.expand([
+        ('bird',),
+        # TODO: Add back when gobgp is updated to work with libcalico-go v3 api
+        # ('gobgp',),
+    ])
+    def test_issue_1584(self, backend):
+        """
+        Test cold start of bgp daemon correctly fixes tunl/non-tunl routes.
+
+        This test modifies the working IPIP mode of the pool and monitors the
+        traffic flow to ensure it either is or is not going over the IPIP
+        tunnel as expected.
+        """
+        with DockerHost('host1',
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
+                        start_calico=False) as host1, \
+                DockerHost('host2',
+                           additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
+                           start_calico=False) as host2:
+
+            # Create an IP pool with IP-in-IP disabled.
+            self.pool_action(host1, "create", DEFAULT_IPV4_POOL_CIDR, ipip_mode="Never")
+
+            # Autodetect the IP addresses - this should ensure the subnet is
+            # correctly configured.
+            host1.start_calico_node("--ip=autodetect --backend={0}".format(backend))
+            host2.start_calico_node("--ip=autodetect --backend={0}".format(backend))
+
+            # Create a network and a workload on each host.
+            network1 = host1.create_network("subnet1")
+            workload_host1 = host1.create_workload("workload1",
+                                                   network=network1)
+            workload_host2 = host2.create_workload("workload2",
+                                                   network=network1)
+
+            # Allow network to converge.
+            self.assert_true(
+                workload_host1.check_can_ping(workload_host2.ip, retries=10))
+
+            # Check connectivity in both directions
+            self.assert_ip_connectivity(workload_list=[workload_host1,
+                                                       workload_host2],
+                                        ip_pass_list=[workload_host1.ip,
+                                                      workload_host2.ip])
+
+            # Turn on IPIP and check that IPIP tunnel is being used.
+            self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, ipip_mode="Always")
+            self.assert_ipip_routing(host1, workload_host1, workload_host2,
+                                     True)
+
+            # Toggle the IPIP mode between being expecting IPIP and not.  Only the mode
+            # "Always" should result in IPIP tunnel being used in these tests.
+            modes = ["Always"]
+            for mode in ["CrossSubnet", "Always", "Never", "Always"]:
+                # At the start of this loop we should have connectivity.
+                logger.info("New mode setting: %s" % mode)
+                logger.info("Previous mode settings: %s" % modes)
+
+                # Shutdown the calico-node on host1, we should still have connectivity because
+                # the node was shut down without removing the routes.  Check tunnel usage based
+                # on the current IPIP mode (only a mode of Always will use the tunnel).
+                host1.execute("docker rm -f calico-node")
+                self.assert_ipip_routing(host1, workload_host1, workload_host2,
+                                         modes[-1] == "Always")
+
+                # Update the IPIP mode.
+                self.pool_action(host1, "replace", DEFAULT_IPV4_POOL_CIDR, ipip_mode=mode)
+                modes.append(mode)
+
+                # At this point, since we are toggling between IPIP connectivity and no IPIP
+                # connectivity, there will be a mistmatch between the two nodes because host1
+                # does not have the BGP daemon running on it.
+                self.assert_ip_connectivity(workload_list=[workload_host1],
+                                            ip_pass_list=[],
+                                            ip_fail_list=[workload_host2.ip],
+                                            retries=10)
+
+                # Start the calico-node.  Connectivity should be restored once the BGP daemon
+                # on host1 fixes the route.
+                host1.start_calico_node("--ip=autodetect --backend={0}".format(backend))
+                self.assert_ipip_routing(host1, workload_host1, workload_host2,
+                                         modes[-1] == "Always")
+
+    @staticmethod
+    def pool_action(host, action, cidr,
+                    disabled=False, ipip_mode=None, nat_outgoing=None, pool_name=None):
         """
         Perform an ipPool action.
         """
+        pool_name = "test.ippool" if pool_name is None else pool_name
         testdata = {
-            'apiVersion': 'v1',
-            'kind': 'ipPool',
+            'apiVersion': 'projectcalico.org/v3',
+            'kind': 'IPPool',
             'metadata': {
-                'cidr': str(cidr)
+                'name': pool_name,
             },
             'spec': {
-                'ipip': {
-                    'enabled': ipip
-                },
-                'disabled': disabled
+                'cidr': str(cidr),
+                'disabled': disabled,
             }
         }
 
-        # Only add the mode field is a value is specified.  Note that
-        # the mode field will not be valid on pre-v1.1.0 versions of calicoctl.
-        if ipip_mode:
-            testdata['spec']['ipip']['mode'] = ipip_mode
-
-        host.writefile("testfile.yaml", testdata)
-        host.calicoctl("%s -f testfile.yaml" % action, version=calicoctl_version)
+        # Add optional fields if needed
+        # ipip_mode could be Never, Always, CrossSubnet or not specified (defaults to Always)
+        if ipip_mode is not None:
+            testdata['spec']['ipipMode'] = ipip_mode
+        # nat_outgoing could be True, False or not specified (defaults to False)
+        if nat_outgoing is not None:
+            testdata['spec']['natOutgoing'] = nat_outgoing
+        host.writejson("testfile", testdata)
+        host.calicoctl("%s -f testfile" % action)
 
     def assert_tunl_ip(self, host, ip_network, expect=True):
         """
@@ -202,7 +283,8 @@ class TestIPIP(TestBase):
         :param host: DockerHost object
         :param ip_network: IPNetwork object which describes the ip-range we do (or do not)
         expect to see an IP from on the tunl interface.
-        :param expect: Whether or not we are expecting to see an IP from IPNetwork on the tunl interface.
+        :param expect: Whether or not we are expecting to see an IP from IPNetwork on the tunl
+                       interface.
         :return:
         """
         retries = 7
@@ -226,7 +308,8 @@ class TestIPIP(TestBase):
             else:
                 return
 
-    def remove_tunl_ip(self):
+    @staticmethod
+    def remove_tunl_ip():
         """
         Remove the host tunl IP address if assigned.
         """
@@ -242,11 +325,12 @@ class TestIPIP(TestBase):
         ipnet = str(IPNetwork(match.group(1)))
 
         try:
-            output = subprocess.check_output(["ip", "addr", "del", ipnet, "dev", "tunl0"])
+            subprocess.check_output(["ip", "addr", "del", ipnet, "dev", "tunl0"])
         except subprocess.CalledProcessError:
             return
 
-    def modify_subnet(self, host, prefixlen):
+    @staticmethod
+    def modify_subnet(host, prefixlen):
         """
         Update the calico node resource to use the specified prefix length.
 
@@ -254,15 +338,14 @@ class TestIPIP(TestBase):
         """
         node = json.loads(host.calicoctl(
             "get node %s --output=json" % host.get_hostname()))
-        assert len(node) == 1
 
         # Get the current network and prefix len
-        ipnet = IPNetwork(node[0]["spec"]["bgp"]["ipv4Address"])
+        ipnet = IPNetwork(node["spec"]["bgp"]["ipv4Address"])
         current_prefix_len = ipnet.prefixlen
 
         # Update the prefix length
         ipnet.prefixlen = prefixlen
-        node[0]["spec"]["bgp"]["ipv4Address"] = str(ipnet)
+        node["spec"]["bgp"]["ipv4Address"] = str(ipnet)
 
         # Write the data back again.
         host.writejson("new_data", node)
@@ -278,12 +361,13 @@ class TestIPIP(TestBase):
             orig_tx = self.get_tunl_tx(host1)
             workload_host1.execute("ping -c 2 -W 1 %s" % workload_host2.ip)
             if expect_ipip:
-                assert self.get_tunl_tx(host1) == orig_tx + 2
+                self.assertEqual(self.get_tunl_tx(host1), orig_tx + 2)
             else:
-                assert self.get_tunl_tx(host1) == orig_tx
+                self.assertEqual(self.get_tunl_tx(host1), orig_tx)
         retry_until_success(check, retries=10)
 
-    def get_tunl_tx(self, host):
+    @staticmethod
+    def get_tunl_tx(host):
         """
         Get the tunl TX count
         """
@@ -299,8 +383,9 @@ class TestIPIP(TestBase):
     @parameterized.expand([
         (False,),
         (True,),
-        (False,'gobgp',),
-        (True,'gobgp',),
+        # TODO: Add back when gobgp is updated to work with libcalico-go v3 api
+        #(False, 'gobgp',),
+        #(True, 'gobgp',),
     ])
     def test_gce(self, with_ipip, backend='bird'):
         """Test with and without IP-in-IP routing on simulated GCE instances.
@@ -361,12 +446,11 @@ class TestIPIP(TestBase):
         if rrc:
             # Set the default AS number - as this is used by the RR mesh,
             # and turn off the node-to-node mesh (do this from any host).
-            host1.calicoctl("config set asNumber 64513")
-            host1.calicoctl("config set nodeToNodeMesh off")
+            update_bgp_config(host1, asNum=64513, nodeMesh=False)
             # Peer from each host to the route reflector.
             for host in [host1, host2]:
                 for rr in rrc.get_redundancy_group():
-                    create_bgp_peer(host, "node", rr.ip, 64513)
+                    create_bgp_peer(host, "node", rr.ip, 64513, metadata={'name':host.name})
 
         # Create a network and a workload on each host.
         network1 = host1.create_network("subnet1")
@@ -389,21 +473,51 @@ class TestIPIP(TestBase):
                                             ip_pass_list=[workload_host1.ip,
                                                           workload_host2.ip])
 
-                # Check that we are using IP-in-IP for some routes.
-                assert "tunl0" in host1.execute("ip r")
-                assert "tunl0" in host2.execute("ip r")
-
-                # Check that routes are not flapping: the following shell
-                # script checks that there is no output for 10s from 'ip
-                # monitor', on either host.  The "-le 1" is to allow for
-                # something (either 'timeout' or 'ip monitor', not sure) saying
-                # 'Terminated' when the 10s are up.  (Note that all commands
-                # here are Busybox variants; I tried 'grep -v' to eliminate the
-                # Terminated line, but for some reason it didn't work.)
                 for host in [host1, host2]:
-                    host.execute("changes=`timeout -t 10 ip -t monitor 2>&1`; " +
-                                 "echo \"$changes\"; " +
-                                 "test `echo \"$changes\" | wc -l` -le 1")
+
+                    # Check that we are using IP-in-IP for some routes.
+                    assert "tunl0" in host.execute("ip r")
+
+                    # Get current links and addresses, as a baseline for the
+                    # following changes test.
+                    host.execute("ip l")
+                    host.execute("ip a")
+
+                    # Check that routes are not flapping, on either host, by
+                    # running 'ip monitor' for 10s and checking that it does
+                    # not indicate any changes other than those associated with
+                    # an IP address being added to the tunl0 device.
+                    ip_changes = host.execute("timeout -t 10 ip -t monitor 2>&1 || true")
+                    lines = ip_changes.split("\n")
+                    assert len(lines) >= 1, "No output from ip monitor"
+                    expected_lines_following = 0
+                    for line in lines:
+                        if expected_lines_following > 0:
+                            expected_lines_following -= 1
+                        elif "Terminated" in line:
+                            # "Terminated"
+                            pass
+                        elif "Timestamp" in line:
+                            # e.g. "Timestamp: Wed Nov  1 18:02:38 2017 689895 usec"
+                            pass
+                        elif ": tunl0" in line:
+                            # e.g. "2: tunl0    inet 192.168.128.1/32 scope global tunl0"
+                            #      "       valid_lft forever preferred_lft forever"
+                            # Indicates IP address being added to the tunl0 device.
+                            expected_lines_following = 1
+                        elif line.startswith("local") and "dev tunl0" in line:
+                            # e.g. "local 192.168.128.1 dev tunl0 table local ..."
+                            # Local routing table entry associated with tunl0
+                            # device IP address.
+                            pass
+                        elif "172.17.0.1 dev eth0 lladdr" in line:
+                            # Ex: "172.17.0.1 dev eth0 lladdr 02:03:04:05:06:07 REACHABLE"
+                            # Indicates that the host just learned the MAC
+                            # address of its default gateway.
+                            pass
+                        else:
+                            assert False, "Unexpected ip monitor line: %r" % line
+
             else:
                 # Expect non-connectivity between workloads on different hosts.
                 self.assert_false(

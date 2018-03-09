@@ -1,6 +1,6 @@
 ---
 title: Calico with OpenStack
-redirect_from: latest/getting-started/openstack/installation/index
+canonical_url: 'https://docs.projectcalico.org/v2.6/getting-started/openstack/installation/'
 ---
 
 There are many ways to try out Calico with OpenStack, because OpenStack

@@ -1,6 +1,6 @@
 ---
 title: calicoctl get
-redirect_from: latest/reference/calicoctl/commands/get
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/calicoctl/commands/get'
 ---
 
 This sections describes the `calicoctl get` command.
@@ -173,8 +173,7 @@ eth0
 #### `yaml / json`
 
 The `yaml` and `json` options display the output as a list of YAML documents or JSON dictionaries.  The fields for
-resource type are documented in the [Resources]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/) guide, or alternatively view the structure
-definitions (implemented in golang) in the [libcalic API](https://github.com/projectcalico/libcalico-go/tree/master/lib/api).
+resource type are documented in the [Resources]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/) guide.
 
 The output from either of these formats may be used as input for all of the resource management commands.
 

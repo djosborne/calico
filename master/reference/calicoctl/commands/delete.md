@@ -1,5 +1,6 @@
 ---
 title: calicoctl delete
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/calicoctl/commands/delete'
 ---
 
 This sections describes the `calicoctl delete` command.
@@ -7,9 +8,13 @@ This sections describes the `calicoctl delete` command.
 Read the [calicoctl command line interface user reference]({{site.baseurl}}/{{page.version}}/reference/calicoctl/) 
 for a full list of calicoctl commands.
 
-> The available actions for a specific resource type may be limited based on the datastore
-> used for Calico (etcdv2 / Kubernetes API).  Please refer to the [Resources section]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/)
+> **Note**: The available actions for a specific resource type may be 
+> limited based on the datastore used for {{site.prodname}} (etcdv3 / Kubernetes API). 
+> Please refer to the 
+> [Resources section]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/)
 > for details about each resource type.
+{: .alert .alert-info}
+
 
 ## Displaying the help text for 'calicoctl delete' command
 
@@ -18,10 +23,9 @@ command.
 
 ```
 Usage:
-  calicoctl delete ([--scope=<SCOPE>] [--node=<NODE>] [--orchestrator=<ORCH>]
-                    [--workload=<WORKLOAD>] (<KIND> [<NAME>]) |
+  calicoctl delete ( (<KIND> [<NAME>]) |
                    --filename=<FILE>)
-                   [--skip-not-exists] [--config=<CONFIG>]
+                   [--skip-not-exists] [--config=<CONFIG>] [--namespace=<NS>]
 
 Examples:
   # Delete a policy using the type and name specified in policy.yaml.
@@ -39,18 +43,12 @@ Options:
                             don't exist.
   -f --filename=<FILENAME>  Filename to use to delete the resource.  If set to
                             "-" loads from stdin.
-  -n --node=<NODE>          The node (this may be the hostname of the compute
-                            server if your installation does not explicitly set
-                            the names of each Calico node).
-     --orchestrator=<ORCH>  The orchestrator (valid for workload endpoints).
-     --workload=<WORKLOAD>  The workload (valid for workload endpoints).
-     --scope=<SCOPE>        The scope of the resource type.  One of global,
-                            node.  This is only valid for BGP peers and is used
-                            to indicate whether the peer is a global peer or
-                            node-specific.
   -c --config=<CONFIG>      Path to the file containing connection
                             configuration in YAML or JSON format.
                             [default: /etc/calico/calicoctl.cfg]
+  -n --namespace=<NS>       Namespace of the resource.
+                            Only applicable to NetworkPolicy and WorkloadEndpoint.
+                            Uses the default namespace if not specified.
 
 Description:
   The delete command is used to delete a set of resources by filename or stdin,
@@ -59,13 +57,16 @@ Description:
 
   Valid resource types are:
 
-    * node
+    * bgpConfiguration
     * bgpPeer
+    * felixConfiguration
+    * globalNetworkPolicy
     * hostEndpoint
-    * workloadEndpoint
     * ipPool
-    * policy
+    * networkPolicy
+    * node
     * profile
+    * workloadEndpoint
 
   The resource type is case insensitive and may be pluralized.
 
@@ -106,15 +107,9 @@ Successfully deleted 1 'policy' resource(s)
                           don't exist.
 -f --filename=<FILENAME>  Filename to use to delete the resource.  If set to
                           "-" loads from stdin.
--n --node=<NODE>          The node (this may be the hostname of the compute
-                          server if your installation does not explicitly set
-                          the names of each Calico node).
-   --orchestrator=<ORCH>  The orchestrator (valid for workload endpoints).
-   --workload=<WORKLOAD>  The workload (valid for workload endpoints).
-   --scope=<SCOPE>        The scope of the resource type.  One of global,
-                          node.  This is only valid for BGP peers and is used
-                          to indicate whether the peer is a global peer or
-                          node-specific.
+-n --namespace=<NS>       Namespace of the resource.
+                          Only applicable to NetworkPolicy and WorkloadEndpoint.
+                          Uses the default namespace if not specified.
 ```
 
 ### General options
@@ -129,6 +124,6 @@ Successfully deleted 1 'policy' resource(s)
 
 -  [Resources]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/) for details on all valid resources, including file format
    and schema
--  [Policy]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/policy) for details on the Calico selector-based policy model
+-  [NetworkPolicy]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/networkpolicy) for details on the {{site.prodname}} selector-based policy model
 -  [calicoctl configuration]({{site.baseurl}}/{{page.version}}/reference/calicoctl/setup) for details on configuring `calicoctl` to access
-   the Calico datastore.
+   the {{site.prodname}} datastore.

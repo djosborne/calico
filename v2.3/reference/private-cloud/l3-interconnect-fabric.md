@@ -1,7 +1,7 @@
 ---
 title: IP Interconnect Fabrics in Calico
-redirect_from: latest/reference/private-cloud/l3-interconnect-fabric
 lead_text: 'Where large-scale IP networks and hardware collide'
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/private-cloud/l3-interconnect-fabric'
 ---
 
 
@@ -54,7 +54,7 @@ through a vRouter. Each vRouter announces all of the endpoints it is
 attached to to all the other vRouters and other routers on the
 infrastructure fabric, using BGP, usually with BGP route reflectors to
 increase scale. A discussion of why we use BGP can be found in the [Why
-BGP?](http://www.projectcalico.org/why-bgp/) blog post.
+BGP?](https://www.projectcalico.org/why-bgp/) blog post.
 
 Access control lists (ACLs) enforce security (and other) policy as
 directed by whatever cloud orchestrator is in use. There are other
@@ -84,7 +84,7 @@ in use, we would be happy to host a guest technical note.
 
 1.  The routing infrastructure is based on some form of IGP. Due to the
     limitations in scale of IGP networks (see the [why BGP
-    post](http://www.projectcalico.org/why-bgp/) for discussion of this
+    post](https://www.projectcalico.org/why-bgp/) for discussion of this
     topic), the project Calico team does not believe that using an IGP
     to distribute endpoint reachability information will adequately
     scale in a Calico environment. However, it is possible to use a
@@ -116,7 +116,7 @@ The two methods are:
 
 1.  A BGP fabric where each of the TOR switches (and their subsidiary
     compute servers) are a unique [Autonomous
-    System (AS)](http://en.wikipedia.org/wiki/Autonomous_System_(Internet))
+    System (AS)](https://en.wikipedia.org/wiki/Autonomous_System_(Internet))
     and they are interconnected via either an Ethernet switching plane
     provided by the spine switches in a
     [leaf/spine](http://bradhedlund.com/2012/10/24/video-a-basic-introduction-to-the-leafspine-data-center-networking-fabric-design/)
@@ -256,7 +256,7 @@ servers that are in its AS, and announces all of the routes from within
 the AS (rack) to the other ToRs and the larger world. This means that
 each compute server will see the ToR as the next hop for all external
 routes, and the individual compute servers are the next hop for all
-routes external to the rack.
+routes internal to the rack.
 
 ### The *AS per Compute Server* model
 

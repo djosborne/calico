@@ -1,17 +1,41 @@
-JEKYLL_VERSION=3.3.1
+###############################################################################
+# Determine whether there's a local yaml installed or use dockerized version.
+# Note, to install yaml: "go get github.com/mikefarah/yaml"
+GO_BUILD_VER?=v0.7
+CALICO_BUILD?=calico/go-build:$(GO_BUILD_VER)
+YAML_CMD:=$(shell which yaml || echo docker run --rm -i $(CALICO_BUILD) yaml)
+
+###############################################################################
+# Versions
+CALICO_DIR=$(shell git rev-parse --show-toplevel)
+VERSIONS_FILE?=$(CALICO_DIR)/_data/versions.yml
+
+###############################################################################
+# HtmlProofer
+HP_IGNORE_LOCAL_DIRS?=$(shell cat $(VERSIONS_FILE) | $(YAML_CMD) read - "htmlProoferLocalDirIgnore")
+HP_VERSION=v0.2
+
+JEKYLL_VERSION=pages
+DEV?=false
+
+CONFIG=--config _config.yml
+ifeq ($(DEV),true)
+	CONFIG:=$(CONFIG),_config_dev.yml
+endif
+
 serve:
-	docker run --rm -ti -e JEKYLL_UID=`id -u` -p 4000:4000 -v $$PWD:/srv/jekyll jekyll/jekyll:$(JEKYLL_VERSION) jekyll serve --incremental
+	docker run --rm -ti -e JEKYLL_UID=`id -u` -p 4000:4000 -v $$PWD:/srv/jekyll jekyll/jekyll:$(JEKYLL_VERSION) jekyll serve --incremental $(CONFIG)
 
 .PHONY: build
 _site build:
-	docker run --rm -ti -e JEKYLL_UID=`id -u` -v $$PWD:/srv/jekyll jekyll/jekyll:$(JEKYLL_VERSION) jekyll build --incremental
+	docker run --rm -ti -e JEKYLL_UID=`id -u` -v $$PWD:/srv/jekyll jekyll/jekyll:$(JEKYLL_VERSION) jekyll build --incremental $(CONFIG)
 
 clean:
 	docker run --rm -ti -e JEKYLL_UID=`id -u` -v $$PWD:/srv/jekyll jekyll/jekyll:$(JEKYLL_VERSION) jekyll clean
 
 htmlproofer: clean _site
-	docker run -ti -e JEKYLL_UID=`id -u` --rm -v $$PWD/_site:/_site/ quay.io/calico/htmlproofer /_site --file-ignore /v1.5/,/v1.6/,/v2.0/ --assume-extension --check-html --empty-alt-ignore --url-ignore "/docs.openshift.org/,#,/github.com\/projectcalico\/calico\/releases\/download/"
-	-docker run -ti -e JEKYLL_UID=`id -u` --rm -v $$PWD/_site:/_site/ quay.io/calico/htmlproofer /_site --assume-extension --check-html --empty-alt-ignore --url-ignore "#"
+	docker run -ti -e JEKYLL_UID=`id -u` --rm -v $$PWD/_site:/_site/ quay.io/calico/htmlproofer:$(HP_VERSION) /_site --file-ignore ${HP_IGNORE_LOCAL_DIRS} --assume-extension --check-html --empty-alt-ignore --url-ignore "/docs.openshift.org/,#,/github.com\/projectcalico\/calico\/releases\/download/"
+	-docker run -ti -e JEKYLL_UID=`id -u` --rm -v $$PWD/_site:/_site/ quay.io/calico/htmlproofer:$(HP_VERSION) /_site --assume-extension --check-html --empty-alt-ignore --url-ignore "#"
 	# Rerun htmlproofer across _all_ files, but ignore failure, allowing us to notice legacy docs issues without failing CI
 	
 	docker run -v $$PWD:/calico --entrypoint /bin/sh -ti garethr/kubeval:0.1.1 -c 'find /calico/_site/master -name "*.yaml" |grep -v config.yaml | xargs /kubeval'
@@ -35,3 +59,8 @@ endif
 
 	# Check the redirect_from lines and strip the .md from the URL
 	find $(VERSION) \( -name '*.md' -o -name '*.html' \) -exec sed -i 's#^\(redirect_from:.*\)\.md#\1#' '{}' \;
+    
+update_canonical_urls:
+    # You must pass two version numbers into this command, e.g., make update_canonical_urls OLD=v3.0 NEW=v3.1
+    # Looks through all directories and replaces previous latest release version numbers in canonical URLs with new
+	find . \( -name '*.md' -o -name '*.html' \) -exec sed -i '/canonical_url:/s/$(OLD)/$(NEW)/g' {} \;

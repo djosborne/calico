@@ -1,10 +1,11 @@
 ---
 title: Logging
+canonical_url: 'https://docs.projectcalico.org/v3.0/usage/troubleshooting/logging'
 ---
 
-## The calico-node container
+## The {{site.nodecontainer}} container
 
-The components in the calico-node container all log to the directories under
+The components in the `{{site.nodecontainer}}` container all log to the directories under
 `/var/log/calico` inside the container.  By default this is mapped to the
 `/var/log/calico` directory on the host but can be changed by specifying a
 `--log-dir` parameter on the `calicoctl node run` command.
@@ -30,47 +31,56 @@ svlogd can also be configured to forward logs to syslog, to prefix each line
 and to filter logs. See the [documentation](http://smarden.org/runit/svlogd.8.html)
 for further details.
 
-See the following sub-sections for details on configuring the log level for
-each calico-node component.
+See the following subsections for details on configuring the log level for
+each `{{site.nodecontainer}}` component.
 
 ### Bird/Bird6
 
-Bird and Bird6 are used for distributing IPv4 and IPv6 routes between Calico
+Bird and Bird6 are used for distributing IPv4 and IPv6 routes between {{site.prodname}}
 enabled hosts.  The logs are output in the `bird` and `bird6` sub-directories
-of the calico/node logging directory.
+of the `{{site.nodecontainer}}` logging directory.
 
-Use the `calicoctl config set loglevel` command on any host to change the
-log level across all Calico nodes, _or_ use the same command with the `--node`
-option to run the command for that specific node.  This command affects the
-logging level for both Bird/Bird6 and Felix.
+See [BGP Configuration Resource](/{{page.version}}/reference/calicoctl/resources/bgpconfig) 
+for details on how to modify the logging level. For example:
 
-Valid log levels are:  none, debug, info, warning, error, critical.  For example:
+```
+# Get the current bgpconfig settings
+$ calicoctl get bgpconfig -o yaml > bgp.yaml
 
-        calicoctl config set logLevel error
-        calicoctl config set logLevel debug --node=Calico-Node-1
+# Modify logSeverityScreen to none, debug, info, etc.
+#   Global change: set name to "default"
+#   Node-specific change: set name to the node name, e.g. "{{site.prodname}}-Node-1"
+$ vim bgp.yaml
+
+# Replace the current bgpconfig settings
+$ calicoctl replace -f bgp.yaml
+```
 
 ### Felix
 
-Felix is the primary Calico agent that runs on each machine that hosts
+Felix is the primary {{site.prodname}} agent that runs on each machine that hosts
 endpoints.  Felix is responsible for the programming of iptables rules on the
-host.  The logs are output in the `felix` sub-directory of the calico/node
+host.  The logs are output in the `felix` sub-directory of the `{{site.nodecontainer}}`
 logging directory.
 
-Use the `calicoctl config set loglevel` command on any host to change the
-log level across all Calico nodes, _or_ use the same command with the `--node`
-option to run the command for that specific node.  This command affects the
-logging level for both Bird/Bird6 and Felix.
+```
+# Get the current felixconfig settings
+$ calicoctl get felixconfig -o yaml > felix.yaml
 
-Valid log levels are:  none, debug, info, warning, error, critical.  For example:
+# Modify logSeverityScreen to none, debug, info, etc.
+#   Global change: set name to "default"
+#   Node-specific change: set name to the node name, e.g. "{{site.prodname}}-Node-1"
+$ vim felix.yaml
 
-        calicoctl config set logLevel none
-        calicoctl config set logLevel error --node=Calico-Node-1
+# Replace the current felixconfig settings
+$ calicoctl replace -f felix.yaml
+```
 
 ### confd
 
 The confd agent generates configuration files for Felix and Bird using
 configuration data present in the etcd datastore.  The logs are output in the
-`confd` sub-directory of the calico/node logging directory.
+`confd` sub-directory of the `{{site.nodecontainer}}` logging directory.
 
 By default, the confd logging level is "debug" and cannot be changed without
 editing configuration within the node image.
@@ -80,6 +90,6 @@ For more information on the allowed levels, see the
 
 ## Docker network and IPAM driver
 
-When running Calico as a Docker network plugin, the Calico network driver runs
-inside the calico/node container.  The logs are output in the `libnetwork` sub-directory
-of the calico/node logging directory.
+When running {{site.prodname}} as a Docker network plugin, the {{site.prodname}} network driver runs
+inside the `{{site.nodecontainer}}` container.  The logs are output in the `libnetwork` sub-directory
+of the `{{site.nodecontainer}}` logging directory.

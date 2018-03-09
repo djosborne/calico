@@ -1,5 +1,6 @@
 ---
 title: Kubeadm Hosted Install 
+canonical_url: 'https://docs.projectcalico.org/v3.0/getting-started/kubernetes/installation/hosted/kubeadm/'
 ---
 
 This document outlines how to install Calico, as well as a as single node 
@@ -21,7 +22,7 @@ or higher.
 To install this Calico and a single node etcd, run the following command:
 
 ```
-kubectl apply -f http://docs.projectcalico.org/{{page.version}}/getting-started/kubernetes/installation/hosted/kubeadm/calico.yaml
+kubectl apply -f https://docs.projectcalico.org/{{page.version}}/getting-started/kubernetes/installation/hosted/kubeadm/calico.yaml
 ```
 
 You can download the addon manfiest [here](calico.yaml)

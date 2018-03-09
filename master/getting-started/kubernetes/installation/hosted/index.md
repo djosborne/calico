@@ -1,5 +1,6 @@
 ---
 title: Calico Kubernetes Hosted Install
+canonical_url: 'https://docs.projectcalico.org/v3.0/getting-started/kubernetes/installation/hosted/'
 ---
 
 Calico can be installed on a Kubernetes cluster with a single command.
@@ -32,10 +33,10 @@ Each manifest contains all the necessary resources for installing Calico on each
 It installs the following Kubernetes resources:
 
 - The `calico-config` ConfigMap, which contains parameters for configuring the install.
-- Installs the `calico/node` container on each host using a DaemonSet.
-- Installs the Calico CNI binaries and network config on each host using a DaemonSet.
-- Runs the `calico/kube-policy-controller` in a Deployment.
-- The `calico-etcd-secrets` Secret, which optionally allows for providing etcd TLS assets.
+- Installs the `{{site.nodecontainer}}` container on each host using a daemon set.
+- Installs the Calico CNI binaries and network config on each host using a daemon set.
+- Runs `calico/kube-controllers` as a deployment.
+- The `calico-etcd-secrets` secret, which optionally allows for providing etcd TLS assets.
 
 ## Configuration options
 
@@ -47,7 +48,7 @@ the following configuration parameters:
 Calico IPAM assigns IP addresses from [IP pools]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/ippool).
 
 To change the default IP range used for pods, modify the `CALICO_IPV4POOL_CIDR` section of the calico.yaml manifest.  For more
-information, see the [calico/node configuration reference]({{site.baseurl}}/{{page.version}}/reference/node/configuration).
+information, see the [Configuring {{site.nodecontainer}}]({{site.baseurl}}/{{page.version}}/reference/node/configuration).
 
 ### Configuring IP-in-IP
 
@@ -59,7 +60,7 @@ want to disable IP-in-IP encapsulation, for example if:
 - They intend to use BGP peering to make their underlying infrastructure aware of Pod IP addresses.
 
 To disable IP-in-IP encapsulation, modify the `CALICO_IPV4POOL_IPIP` section of the manifest.  For more
-information, see the [calico/node configuration reference]({{site.baseurl}}/{{page.version}}/reference/node/configuration).
+information, see the [Configuring {{site.nodecontainer}}]({{site.baseurl}}/{{page.version}}/reference/node/configuration).
 
 ### Etcd Configuration
 
@@ -91,14 +92,6 @@ To use these manifests with a TLS enabled etcd cluster you must do the following
 Calico's manifests assign its components one of two service accounts.
 Depending on your cluster's authorization mode, you'll want to back these
 ServiceAccounts with the neccessary permissions.
-
-#### RBAC
-
-If using Calico with RBAC, apply the `ClusterRole` and `ClusterRoleBinding` specs:
-
-```
-kubectl apply -f {{site.url}}/{{page.version}}/getting-started/kubernetes/installation/rbac.yaml
-```
 
 ### Other Configuration Options
 

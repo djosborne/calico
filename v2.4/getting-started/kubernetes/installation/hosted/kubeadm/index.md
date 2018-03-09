@@ -1,9 +1,15 @@
 ---
 title: Kubeadm Hosted Install
+canonical_url: 'https://docs.projectcalico.org/v3.0/getting-started/kubernetes/installation/hosted/kubeadm/'
 ---
 
 This document outlines how to install Calico, as well as a as single node
 etcd cluster for use by Calico on a Kubernetes cluster created by kubeadm.
+
+If you have already built your cluster with kubeadm, please review the
+[Requirements / Limitations](#requirements--limitations) at the bottom of
+this page. It is likely you will need to recreate your cluster with the
+`--pod-network-cidr` and `--service-cidr` arguments to kubeadm.
 
 Users who have deployed their own etcd cluster outside of kubeadm should
 use the [Calico only manifest](../hosted) instead, as it does not deploy its
@@ -17,7 +23,7 @@ You can easily create a cluster compatible with this manifest by following [the 
 To install this Calico and a single node etcd on a run the following command
 depending on your kubeadm / kubernetes version:
 
-For Kubeadm 1.6 with Kubernetes 1.6+:
+For Kubeadm stable with Kubernetes version >= v1.6.0:
 
 ```
 kubectl apply -f {{site.url}}/{{page.version}}/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
@@ -25,7 +31,7 @@ kubectl apply -f {{site.url}}/{{page.version}}/getting-started/kubernetes/instal
 
 >[Click here to view the above yaml directly.](1.6/calico.yaml)
 
-For Kubeadm 1.5 with Kubernetes 1.5.x:
+For Kubeadm 1.5 with Kubernetes version v1.5.x:
 
 ```
 kubectl apply -f {{site.url}}/{{page.version}}/getting-started/kubernetes/installation/hosted/kubeadm/1.5/calico.yaml
@@ -58,13 +64,15 @@ $ kubectl get node <master_name> -o yaml
 ### Requirements / Limitations
 
 * This install does not configure etcd TLS
-* This install expects that one Kubernetes master node has been labeled with:
+* This install expects that one Kubernetes master node has been labeled
+  (this is usually setup by kubeadm, but `kubectl get node --show-labels` will expose the labels) with:
   * For Kubeadm 1.5 `kubeadm.alpha.kubernetes.io/role: master`
   * For Kubeadm 1.6 `node-role.kubernetes.io/master: ""`
-* This install assumes no other pod network has been installed.
-* The CIDR(s) specified with the flag `--cluster-cidr` (pre 1.6) or
+* This install assumes no other pod network configurations have been installed
+  in /etc/cni/net.d (or equivilent directory).
+* The CIDR(s) specified with the kubeadm flag `--cluster-cidr` (pre 1.6) or
   `--pod-network-cidr` (1.6+) must match the Calico IP Pools to have Network
   Policy function correctly. The default is `192.168.0.0/16`.
-* The CIDR specified with the flag `--service-cidr` should not overlap with the Calico IP Pool.
+* The CIDR specified with the kubeadm flag `--service-cidr` should not overlap with the Calico IP Pool.
   * The default CIDR for `--service-cidr` is `10.96.0.0/12`.
   * The calico.yaml(s) linked sets the Calico IP Pool to `192.168.0.0/16`.

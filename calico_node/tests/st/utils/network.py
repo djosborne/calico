@@ -12,11 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import os
 from functools import partial
 from tests.st.utils.exceptions import CommandExecError
 from tests.st.utils.utils import retry_until_success
 
 logger = logging.getLogger(__name__)
+
+global_networking = None
+NETWORKING_CNI = "cni"
+NETWORKING_LIBNETWORK = "libnetwork"
+
+
+def global_setting():
+    global global_networking
+    if global_networking is None:
+        global_networking = os.getenv("ST_NETWORKING")
+        if global_networking:
+            assert global_networking in [NETWORKING_CNI, NETWORKING_LIBNETWORK]
+        else:
+            global_networking = NETWORKING_CNI
+    return global_networking
+
+
+class DummyNetwork(object):
+    def __init__(self, name):
+        self.name = name 
+        self.network = name
+        self.deleted = False
+    def delete(self, host=None):
+        pass
+    def disconnect(self, host, container):
+        pass
+    def __str__(self):
+        return self.name
+
 
 class DockerNetwork(object):
     """

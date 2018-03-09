@@ -1,6 +1,6 @@
 ---
 title: calicoctl user reference
-redirect_from: latest/reference/calicoctl/index
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/calicoctl/'
 ---
 
 The command line tool, `calicoctl`, makes it easy to manage Calico network

@@ -1,5 +1,6 @@
 ---
 title: Upgrading Calico for Kubernetes
+canonical_url: 'https://docs.projectcalico.org/v3.0/getting-started/kubernetes/upgrade/'
 ---
 
 This document covers upgrading the Calico components in a Kubernetes deployment.  This
@@ -10,9 +11,9 @@ network policy for any existing pods.  However, it is recommended that you do no
 new pods to a node that is being upgraded.
 
 It is recommended to upgrade one node at a time, rendering each node as
-unscheduleable using [kubectl cordon](http://kubernetes.io/docs/user-guide/kubectl/v1.6/#cordon)
-before upgrading the node, and then make the node scheduleable after the upgrade is
-complete using [kubectl uncordon](http://kubernetes.io/docs/user-guide/kubectl/v1.6/#uncordon).
+unschedulable using [kubectl cordon](http://kubernetes.io/docs/user-guide/kubectl/v1.8/#cordon)
+before upgrading the node, and then make the node schedulable after the upgrade is
+complete using [kubectl uncordon](http://kubernetes.io/docs/user-guide/kubectl/v1.8/#uncordon).
 
 > **NOTE**
 >

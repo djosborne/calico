@@ -1,14 +1,15 @@
 ---
 title: Security using Calico Profiles
+canonical_url: 'https://docs.projectcalico.org/v2.6/getting-started/docker/tutorials/security-using-calico-profiles'
 ---
 
 ## Background
 
-With Calico as a Docker network plugin, Calico uses an identically named
+With {{site.prodname}} as a Docker network plugin, {{site.prodname}} uses an identically named
 [profile]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/profile)
 to represent each Docker network.  This profile is applied to each container
-in that network and the profile is used by Calico to configure access policy
-for that container.  The Calico network plugin will automatically create the
+in that network and the profile is used by {{site.prodname}} to configure access policy
+for that container.  The {{site.prodname}} network plugin will automatically create the
 associated profile if it does not exist when the container is attached to the
 network.  By default, the profile contains rules that allow full egress traffic
 but allow ingress traffic only from containers within the same network and no
@@ -18,7 +19,7 @@ advance, or editing, the profile associated with the Docker network.
 ## Tutorial
 
 To run through the worked example in this tutorial you will need to set up two hosts
-with calico installed.
+with {{site.prodname}} installed.
 
 Follow the
 [Manual setup]({{site.baseurl}}/{{page.version}}/getting-started/docker/installation/manual)
@@ -37,7 +38,10 @@ To create the networks, run the following commands on one of the hosts:
     docker network create --driver calico --ipam-driver calico-ipam net2
     docker network create --driver calico --ipam-driver calico-ipam net3
 
->Note: To allocate from a specific Calico IP Pool, the `--subnet a.b.c.d/xx` command can be passed to `docker network create`. For more details see below.
+> **Note**: To allocate from a specific {{site.prodname}} IP Pool, the 
+> `--subnet a.b.c.d/xx` command can be passed to `docker network create`. 
+> For more details see below.
+{: .alert .alert-info}
 
 ## 2. Create the workloads in the networks
 
@@ -103,4 +107,4 @@ To see the list of networks, use:
 ## Further Reading
 
 For details on configuring more advanced policy, see
-[Security using Calico Profiles and Policy]({{site.baseurl}}/{{page.version}}/getting-started/docker/tutorials/security-using-calico-profiles-and-policy).
+[Security using {{site.prodname}} Profiles and Policy]({{site.baseurl}}/{{page.version}}/getting-started/docker/tutorials/security-using-calico-profiles-and-policy).

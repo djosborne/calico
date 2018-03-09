@@ -1,6 +1,6 @@
 ---
 title: Deploying Calico on GCE
-redirect_from: latest/reference/public-cloud/gce
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/public-cloud/gce'
 ---
 
 To deploy Calico in [Google Compute Engine][GCE], you must ensure that the

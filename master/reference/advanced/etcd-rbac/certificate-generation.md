@@ -1,5 +1,6 @@
 ---
 title: Generating Certificates for etcd RBAC
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/advanced/etcd-rbac/certificate-generation'
 ---
 
 The etcd datastore has the concept of users that are linked to roles, where
@@ -12,9 +13,9 @@ details that are needed for each of the different certificates but uses the
 [hack/tls-setup tool from the etcd repo](https://github.com/coreos/etcd/tree/master/hack/tls-setup),
 to make certificate generation easy.
 
-The etcd server links a certificate to specific user by using the Common
+The etcd server links a certificate to a specific user by using the Common
 Name (CN) attribute in the certificate. It is important to ensure that the CN
-in the certificate for each component that will be accessing etcd, match the
+in the certificate for each component that will be accessing etcd match the
 username in etcd that has the appropriate etcd roles for accessing its
 required keys or paths.
 
@@ -32,7 +33,7 @@ Generating certificates with hack/tls-setup:
 1. Edit the [etcd certificate config](#configuration-for-the-etcd-certificates).
 2. Add the
    [per-user/per-component configuration files](#configuration-for-per-userper-components-etcd-certificates)
-3. Run `make`.  (Re-running `make` will regenerate the CA and all certificates.)
+3. Run `make`. (Re-running `make` will regenerate the CA and all certificates.)
 
 Generating the certificates creates:
 - the CA
@@ -43,7 +44,7 @@ Generating the certificates creates:
 ## Configuration for the Certificate Authority
 
 The default CA configuration included with hack/tls-setup works well with no
-additional configuration.  The file `certs/ca.pem` generated will need to be
+additional configuration. The file `certs/ca.pem` generated will need to be
 provided to all components (etcd, Kubernetes apiserver, and all calico
 components).
 
@@ -51,9 +52,9 @@ components).
 
 Update the file `config/req-csr.json` by adding the IP addresses of the
 servers that will be running the etcd members to the `"hosts"`
-section.  After generating the certs, three certs are created that can be
+section. After generating the certs, three certs are created that can be
 used for three etcd member servers (though just using one works, when testing).
-These cert and key files are `certs/etcd[123].pem` and
+These certificate and key files are `certs/etcd[123].pem` and
 `certs/etcd[123]-key.pem` and a matching pair will need to be provided to
 each etcd member.
 
@@ -63,7 +64,7 @@ proxies or you could create individual cert/key pairs for each proxy too.
 
 ## Configuration for per-user/per-component's etcd certificates
 
-The certificates for Calico, Kubernetes, or any other component can be
+The certificates for {{site.prodname}}, Kubernetes, or any other component can be
 generated with configuration files similar to the one provided below.
 Replace the &lt;etcd_username&gt; placeholder with the username of the etcd user
 that has roles allowing access to the paths/prefix keys required by the
@@ -90,9 +91,9 @@ associated component.
 ```
 
 The additional configuration files you create should be added to the `config`
-directory located in your hack/tls-setup folder.  To build certificates for
+directory located in your hack/tls-setup folder. To build certificates for
 each new configuration add lines similar to those below to
-the `req:` target in the Makefile.  For each configuration added, make sure the
+the `req:` target in the Makefile. For each configuration added, make sure the
 configuration file name and cert/key file prefix are updated appropriately by
 substituting an appropriate name for &lt;component&gt;.
 
@@ -106,6 +107,6 @@ substituting an appropriate name for &lt;component&gt;.
 
 Once the certificate and key files are generated they will need to be provided
 to the proper component which is beyond the scope of this particular document.
-See [this](kubernetes) for how to provide certificates to Kubernetes and Calico
+See [this](kubernetes) for how to provide certificates to Kubernetes and {{site.prodname}}
 components.
 

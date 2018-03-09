@@ -1,5 +1,6 @@
 ---
 title: calicoctl ipam
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/calicoctl/commands/ipam/show'
 ---
 
 This section describes the `calicoctl ipam show` command.
@@ -57,4 +58,4 @@ No attributes defined for 192.168.1.1
 ## See also
 
 -  [calicoctl configuration]({{site.baseurl}}/{{page.version}}/reference/calicoctl/setup) for details on configuring `calicoctl` to access
-   the Calico datastore.
+   the {{site.prodname}} datastore.

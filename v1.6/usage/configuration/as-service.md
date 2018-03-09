@@ -1,5 +1,6 @@
 ---
 title: Running Calico Node Container as a Service
+canonical_url: 'https://docs.projectcalico.org/v3.0/usage/configuration/as-service'
 ---
 
 This guide explains how to run Calico as a system process or service,
@@ -93,6 +94,10 @@ ExecStart=/usr/bin/docker run --net=host --privileged \
  calico/node:v0.23.1
 
 ExecStop=-/usr/bin/docker stop calico-node
+
+Restart=on-failure
+StartLimitBurst=3
+StartLimitInterval=60s
 
 [Install]
 WantedBy=multi-user.target

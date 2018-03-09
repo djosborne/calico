@@ -1,6 +1,6 @@
 ---
 title: Workload Endpoint Resource (workloadEndpoint)
-redirect_from: latest/reference/calicoctl/resources/workloadendpoint
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/calicoctl/resources/workloadendpoint'
 ---
 
 A Workload Endpoint resource (workloadEndpoint) represents an interface 

@@ -1,5 +1,6 @@
 ---
 title: calicoctl apply
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/calicoctl/commands/apply'
 ---
 
 This sections describes the `calicoctl apply` command.
@@ -7,9 +8,13 @@ This sections describes the `calicoctl apply` command.
 Read the [calicoctl command line interface user reference]({{site.baseurl}}/{{page.version}}/reference/calicoctl/) 
 for a full list of calicoctl commands.
 
-> The available actions for a specific resource type may be limited based on the datastore
-> used for Calico (etcdv2 / Kubernetes API).  Please refer to the [Resources section]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/)
+> **Note**: The available actions for a specific resource type may be 
+> limited based on the datastore used for {{site.prodname}} (etcdv3 / Kubernetes API). 
+> Please refer to the 
+> [Resources section]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/)
 > for details about each resource type.
+{: .alert .alert-info}
+
 
 ## Displaying the help text for 'calicoctl apply' command
 
@@ -18,7 +23,7 @@ command.
 
 ```
 Usage:
-  calicoctl apply --filename=<FILENAME> [--config=<CONFIG>]
+  calicoctl apply --filename=<FILENAME> [--config=<CONFIG>] [--namespace=<NS>]
 
 Examples:
   # Apply a policy using the data in policy.yaml.
@@ -34,6 +39,9 @@ Options:
   -c --config=<CONFIG>      Path to the file containing connection
                             configuration in YAML or JSON format.
                             [default: /etc/calico/calicoctl.cfg]
+  -n --namespace=<NS>       Namespace of the resource.
+                            Only applicable to NetworkPolicy and WorkloadEndpoint.
+                            Uses the default namespace if not specified.
 
 Description:
   The apply command is used to create or replace a set of resources by filename
@@ -41,13 +49,16 @@ Description:
 
   Valid resource types are:
 
-    * node
+    * bgpConfiguration
     * bgpPeer
+    * felixConfiguration
+    * globalNetworkPolicy
     * hostEndpoint
-    * workloadEndpoint
     * ipPool
-    * policy
+    * networkPolicy
+    * node
     * profile
+    * workloadEndpoint
 
   When applying a resource:
   -  if the resource does not already exist (as determined by it's primary
@@ -85,6 +96,9 @@ Successfully applied 2 'policy' resource(s)
 ```
 -f --filename=<FILENAME>  Filename to use to apply the resource.  If set to
                           "-" loads from stdin.
+-n --namespace=<NS>       Namespace of the resource.
+                          Only applicable to NetworkPolicy and WorkloadEndpoint.
+                          Uses the default namespace if not specified.
 ```
 
 ### General options
@@ -99,6 +113,6 @@ Successfully applied 2 'policy' resource(s)
 
 -  [Resources]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/) for details on all valid resources, including file format
    and schema
--  [Policy]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/policy) for details on the Calico selector-based policy model
+-  [NetworkPolicy]({{site.baseurl}}/{{page.version}}/reference/calicoctl/resources/networkpolicy) for details on the {{site.prodname}} selector-based policy model
 -  [calicoctl configuration]({{site.baseurl}}/{{page.version}}/reference/calicoctl/setup) for details on configuring `calicoctl` to access
-   the Calico datastore.
+   the {{site.prodname}} datastore.

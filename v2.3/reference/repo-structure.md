@@ -1,6 +1,6 @@
 ---
 title: Calico Repositories
-redirect_from: latest/reference/repo-structure
+canonical_url: 'https://docs.projectcalico.org/v3.0/reference/repo-structure'
 ---
 
 The following information details which artifacts are built from which
