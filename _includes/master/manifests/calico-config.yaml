@@ -10,11 +10,11 @@ calico-config.yaml acccepts the following include flags:
 | variant_name | Calico, Canal            |
 
 {% endcomment -%}
-# This ConfigMap is used to configure a self-hosted {{include.variant_name}} installation.
+# This ConfigMap is used to configure a self-hosted {{.Values.variant_name}} installation.
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: {{include.variant_name | downcase}}-config
+  name: {{.Values.variant_name | lower}}-config
   namespace: kube-system
 data:
 {%- if include.datastore == "etcd" %}
@@ -35,7 +35,7 @@ data:
 
 {%- endif %}
 {%- if include.network == "calico" %}
-  # Configure the {{site.prodname}} backend to use.
+  # Configure the {{ .Values.prodname }} backend to use.
   calico_backend: "bird"
 
   # Configure the MTU to use
