@@ -14,7 +14,8 @@ flexVol:
   image: quay.io/calico/pod2daemon-flexvol
   tag: v3.3.1
 typha:
-  image: "quay.io/calico/typha"
+  enabled: "true"
+  image: quay.io/calico/typha
   tag: v3.3.1
 flannel:
   tag: v0.9.1
