@@ -61,7 +61,7 @@ spec:
       # as a host-networked pod.
       serviceAccountName: calico-node
       containers:
-      - image: {{ .Values.typha }}:{{ .Values.typha }}
+      - image: {{ .Values.typha.image }}:{{ .Values.typha.tag }}
         name: calico-typha
         ports:
         - containerPort: 5473
