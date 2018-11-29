@@ -14,7 +14,7 @@ flexVol:
   image: quay.io/calico/pod2daemon-flexvol
   tag: v3.3.1
 typha:
-  enabled: "true"
+  enabled: true
   image: quay.io/calico/typha
   tag: v3.3.1
 flannel:
@@ -32,3 +32,5 @@ prodname: Calico
 nodecontainer: calico/node
 noderunning: calico-node
 variant_name: Calico
+app_layer_policy: 
+  enabled: false

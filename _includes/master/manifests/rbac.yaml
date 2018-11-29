@@ -1,4 +1,4 @@
-{% comment %}
+{{- /*
 rbac.yaml acccepts the following include flags:
 
 | Name         | Accepted Values          |
@@ -8,7 +8,7 @@ rbac.yaml acccepts the following include flags:
 | network      | calico, flannel, <unset> |
 | calico_ipam  | true, false              |
 | variant_name | Calico, Canal            |
-{% endcomment -%}
+*/ -}}
 
 {{- if eq .Values.datastore "etcd" -}}
 # Include a clusterrole for the kube-controllers component,

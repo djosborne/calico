@@ -5,5 +5,5 @@ layout: null
 datastore: "kdd"
 network: "calico"
 typha: 
-  enabled: "true"
+  enabled: true
 {% endhelm %}

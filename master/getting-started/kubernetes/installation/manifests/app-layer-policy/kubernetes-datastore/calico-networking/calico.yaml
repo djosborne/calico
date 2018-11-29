@@ -5,6 +5,6 @@ layout: null
 datastore: "kdd"
 network: "calico"
 typha: 
-  enabled: "true"
+  enabled: true
 app_layer_policy: "true"
 {% endhelm %}
