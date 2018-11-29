@@ -106,7 +106,7 @@ data:
   {{- end }}
   {{- if eq .Values.network "calico" -}}
           "mtu": __CNI_MTU__,
-  {{- else if .Values.network }}
+  {{- else if eq .Values.network "none" }}
           "mtu": 1500,
   {{- end }}
   {{- if .Values.calico_ipam -}}

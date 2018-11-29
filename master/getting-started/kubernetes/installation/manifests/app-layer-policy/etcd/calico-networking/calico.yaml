@@ -6,5 +6,6 @@ layout: null
 datastore: "etcd"
 network: "calico"
 calico_ipam: true
-app_layer_policy: "true"
+app_layer_policy: 
+  enabled: true
 {% endhelm %}

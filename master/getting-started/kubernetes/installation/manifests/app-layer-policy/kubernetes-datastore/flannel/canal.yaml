@@ -4,5 +4,6 @@ layout: null
 {% helm %} 
 datastore: "kdd"
 network: "flannel"
-app_layer_policy: "true"
+app_layer_policy: 
+  enabled: true
 {% endhelm %}

@@ -125,7 +125,7 @@ spec:
             - mountPath: /calico-secrets
               name: etcd-certs
 {{- end -}}
-{{- if .Values.app_layer_policy -}}
+{{- if .Values.app_layer_policy.enabled -}}
         # Adds a Flex Volume Driver that creates a per-pod Unix Domain Socket to allow Dikastes
         # to communicate with Felix over the Policy Sync API.
         - name: flexvol-driver
@@ -255,7 +255,7 @@ spec:
               value: "info"
             - name: FELIX_HEALTHENABLED
               value: "true"
-{{- if .Values.app_layer_policy -}}
+{{- if .Values.app_layer_policy.enabled -}}
             # Enable the Policy Sync API between Felix and Dikastes
             - name: FELIX_POLICYSYNCPATHPREFIX
               value: "/var/run/nodeagent"
@@ -309,7 +309,7 @@ spec:
             - mountPath: /calico-secrets
               name: etcd-certs
 {{- end -}}
-{{- if .Values.app_layer_policy -}}
+{{- if .Values.app_layer_policy.enabled -}}
             - name: policysync
               mountPath: /var/run/nodeagent
 {{- end -}}
@@ -465,7 +465,7 @@ spec:
             secretName: calico-etcd-secrets
             defaultMode: 0400
 {{- end -}}
-{{- if .Values.app_layer_policy -}}
+{{- if .Values.app_layer_policy.enabled -}}
         # Used to create per-pod Unix Domain Sockets
         - name: policysync
           hostPath:

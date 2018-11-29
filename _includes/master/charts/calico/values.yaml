@@ -24,9 +24,10 @@ dikastes:
   tag: v3.3.1
   image: quay.io/calico/dikastes
 
-network: calico
-datastore: "etcd"
-calico_ipam: true
+# Core settings don't get defaults 
+# network: calico
+# datastore: "etcd"
+# calico_ipam: true
 
 prodname: Calico
 nodecontainer: calico/node
