@@ -9,7 +9,7 @@ calico-node.yaml acccepts the following include flags:
 | variant_name     | Calico, Canal            |
 | app_layer_policy | true, false              |
 
-{% endcomment -%}
+{% endcomment %}
 # This manifest installs the {{.Values.nodecontainer}} container, as well
 # as the {{ .Values.prodname }} CNI plugins and network config on
 # each master and worker node in a Kubernetes cluster.
@@ -71,14 +71,14 @@ spec:
                 configMapKeyRef:
                   name: {{.Values.variant_name | lower}}-config
                   key: cni_network_config
-{%- if include.datastore == "etcd" %}
+{{- if eq .Values.datastore "etcd" -}}
             # The location of the {{ .Values.prodname }} etcd cluster.
             - name: ETCD_ENDPOINTS
               valueFrom:
                 configMapKeyRef:
                   name: {{.Values.variant_name | lower}}-config
                   key: etcd_endpoints
-  {%- if include.network == "flannel" %}
+  {{- if eq .Values.network "flannel" -}}
             # Location of the CA certificate for etcd.
             - name: ETCD_CA_CERT_FILE
               valueFrom:
@@ -97,22 +97,22 @@ spec:
                 configMapKeyRef:
                   name: canal-config
                   key: etcd_cert
-  {%- endif %}
-{%- elsif include.datastore == "kdd" %}
+  {{- end -}}
+{{- else if eq .Values.datastore "kdd" -}}
             # Set the hostname based on the k8s node name.
             - name: KUBERNETES_NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-{%- endif %}
-{%-  if include.network == "calico" %}
+{{- end -}}
+{{-  if eq .Values.network "calico" -}}
             # CNI MTU Config variable
             - name: CNI_MTU
               valueFrom:
                 configMapKeyRef:
                   name: {{.Values.variant_name | lower}}-config
                   key: veth_mtu
-{%- endif %}
+{{- end -}}
             # Prevents the container from sleeping forever.
             - name: SLEEP
               value: "false"
@@ -121,11 +121,11 @@ spec:
               name: cni-bin-dir
             - mountPath: /host/etc/cni/net.d
               name: cni-net-dir
-{%- if include.datastore == "etcd" %}
+{{- if eq .Values.datastore "etcd" -}}
             - mountPath: /calico-secrets
               name: etcd-certs
-{%- endif %}
-{%- if include.app_layer_policy == "true" %}
+{{- end -}}
+{{- if .Values.app_layer_policy -}}
         # Adds a Flex Volume Driver that creates a per-pod Unix Domain Socket to allow Dikastes
         # to communicate with Felix over the Policy Sync API.
         - name: flexvol-driver
@@ -134,7 +134,7 @@ spec:
           volumeMounts:
           - name: flexvol-driver-host
             mountPath: /host/driver
-{%- endif %}
+{{- end -}}
       containers:
         # Runs {{.Values.nodecontainer}} container on each Kubernetes node.  This
         # container programs network policy and routes on each
@@ -142,7 +142,7 @@ spec:
         - name: calico-node
           image: {{ .Values.node.image }}:{{ .Values.node.tag }}
           env:
-{%- if include.datastore == "etcd" %}
+{{- if eq .Values.datastore "etcd" -}}
             # The location of the {{ .Values.prodname }} etcd cluster.
             - name: ETCD_ENDPOINTS
               valueFrom:
@@ -172,18 +172,18 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-{%- elsif include.datastore == "kdd" %}
+{{- else if  eq .Values.datastore "kdd" -}}
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
               value: "kubernetes"
-  {%- if include.typha == "true" %}
+  {{- if .Values.typha.enabled -}}
             # Typha support: controlled by the ConfigMap.
             - name: FELIX_TYPHAK8SSERVICENAME
               valueFrom:
                 configMapKeyRef:
                   name: {{.Values.variant_name | lower}}-config
                   key: typha_service_name
-  {%- endif %}
+  {{- end -}}
             # Wait for the datastore.
             - name: WAIT_FOR_DATASTORE
               value: "true"
@@ -192,8 +192,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-{%- endif %}
-{%- if include.network == "calico" %}
+{{- end -}}
+{{- if eq .Values.network "calico" -}}
             # Choose the backend to use.
             - name: CALICO_NETWORKING_BACKEND
               valueFrom:
@@ -215,7 +215,7 @@ spec:
                 configMapKeyRef:
                   name: {{.Values.variant_name | lower}}-config
                   key: veth_mtu
-{%- elsif include.network == "flannel" %}
+{{- else if eq .Values.network "flannel" -}}
             # Don't enable BGP.
             - name: CALICO_NETWORKING_BACKEND
               value: "none"
@@ -228,14 +228,14 @@ spec:
             # No IP address needed.
             - name: IP
               value: ""
-{%- else %}
+{{- else -}}
             # Don't enable BGP.
             - name: CALICO_NETWORKING_BACKEND
               value: "none"
             # Cluster type to identify the deployment type
             - name: CLUSTER_TYPE
               value: "k8s"
-{%- endif %}
+{{- end -}}
             # The default IPv4 pool to create on startup if none exists. Pod IPs will be
             # chosen from this range. Changing this value after installation will have
             # no effect. This should fall within `--cluster-cidr`.
@@ -255,11 +255,11 @@ spec:
               value: "info"
             - name: FELIX_HEALTHENABLED
               value: "true"
-{%- if include.app_layer_policy == "true" %}
+{{- if .Values.app_layer_policy -}}
             # Enable the Policy Sync API between Felix and Dikastes
             - name: FELIX_POLICYSYNCPATHPREFIX
               value: "/var/run/nodeagent"
-{%- endif %}
+{{- end -}}
           securityContext:
             privileged: true
           resources:
@@ -274,23 +274,23 @@ spec:
             initialDelaySeconds: 10
             failureThreshold: 6
           readinessProbe:
-{%- if include.network == "calico" %}
+{{- if eq .Values.network "calico" -}}
             exec:
               command:
               - /bin/calico-node
               - -bird-ready
               - -felix-ready
-{%- elsif include.network == "flannel" %}
+{{- else if eq .Values.network "flannel" -}}
             httpGet:
               path: /readiness
               port: 9099
               host: localhost
-{%- else %}
+{{- else -}}
             exec:
               command:
               - /bin/calico-node
               - -felix-ready
-{%- endif %}
+{{- end -}}
             periodSeconds: 10
           volumeMounts:
             - mountPath: /lib/modules
@@ -305,16 +305,16 @@ spec:
             - mountPath: /var/lib/calico
               name: var-lib-calico
               readOnly: false
-{%- if include.datastore == "etcd" %}
+{{- if eq .Values.datastore "etcd" -}}
             - mountPath: /calico-secrets
               name: etcd-certs
-{%- endif %}
-{%- if include.app_layer_policy == "true" %}
+{{- end -}}
+{{- if .Values.app_layer_policy -}}
             - name: policysync
               mountPath: /var/run/nodeagent
-{%- endif %}
-{%- if include.network == "flannel" %}
-  {%- if include.datastore == "kdd" %}
+{{- end -}}
+{{- if eq .Values.network "flannel" -}}
+  {{- if eq .Values.datastore "kdd" -}}
         # This container runs flannel using the kube-subnet-mgr backend
         # for allocating subnets.
         - name: kube-flannel
@@ -347,7 +347,7 @@ spec:
             readOnly: false
           - name: flannel-cfg
             mountPath: /etc/kube-flannel/
-  {%- elsif include.datastore == "etcd" %}
+  {{- else if eq .Values.datastore "etcd" -}}
         # Runs the flannel daemon to enable vxlan networking between
         # container hosts.
         - name: flannel
@@ -419,8 +419,8 @@ spec:
               name: run-flannel
             - mountPath: /calico-secrets
               name: etcd-certs
-  {%- endif %}
-{%- endif %}
+  {{- end -}}
+{{- end -}}
       volumes:
         # Used by {{.Values.nodecontainer}}.
         - name: lib-modules
@@ -436,12 +436,12 @@ spec:
           hostPath:
             path: /run/xtables.lock
             type: FileOrCreate
-{%- if include.network == "flannel" and include.datastore == "kdd" %}
+{{- if and (eq .Values.network "flannel") (eq .Values.datastore "kdd") -}}
         # Used by flannel.
         - name: flannel-cfg
           configMap:
             name: canal-config
-{%- elsif include.network == "flannel" and include.datastore == "etcd" %}
+{{- else if and (eq .Values.network "flannel") (eq .Values.datastore "etcd") -}}
         # Used by flannel.
         - name: run-flannel
           hostPath:
@@ -449,7 +449,7 @@ spec:
         - name: resolv
           hostPath:
             path: /etc/resolv.conf
-{%- endif %}
+{{- end -}}
         # Used to install CNI.
         - name: cni-bin-dir
           hostPath:
@@ -457,15 +457,15 @@ spec:
         - name: cni-net-dir
           hostPath:
             path: /etc/cni/net.d
-{%- if include.datastore == "etcd" %}
+{{- if eq .Values.datastore "etcd" -}}
         # Mount in the etcd TLS secrets with mode 400.
         # See https://kubernetes.io/docs/concepts/configuration/secret/
         - name: etcd-certs
           secret:
             secretName: calico-etcd-secrets
             defaultMode: 0400
-{%- endif %}
-{%- if include.app_layer_policy == "true" %}
+{{- end -}}
+{{- if .Values.app_layer_policy -}}
         # Used to create per-pod Unix Domain Sockets
         - name: policysync
           hostPath:
@@ -476,7 +476,7 @@ spec:
           hostPath:
             type: DirectoryOrCreate
             path: /usr/libexec/kubernetes/kubelet-plugins/volume/exec/nodeagent~uds
-{%- endif %}
+{{- end -}}
 ---
 
 apiVersion: v1
@@ -485,7 +485,7 @@ metadata:
   name: {{ include "nodeName" . }}
   namespace: kube-system
 
-{%- if include.datastore == "etcd" and include.network == "flannel" %}
+{{- if and (eq .Values.datastore "etcd") (eq .Values.network "flannel") -}}
 ---
 
 apiVersion: rbac.authorization.k8s.io/v1beta1
@@ -514,4 +514,4 @@ rules:
       - nodes
     verbs:
       - get
-{%- endif %}
+{{- end -}}

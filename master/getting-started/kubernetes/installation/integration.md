@@ -114,7 +114,7 @@ The Kubernetes `kubelet` should be configured to use the `calico` and `calico-ip
 
 Download the binaries and make sure they're executable.
 
-{% if page.version == "master" %}
+{% if page.version == "master" -}}
 You can download the [latest relase from GitHub](https://github.com/projectcalico/cni-plugin/releases).
 {% else %}
 ```bash
@@ -122,7 +122,7 @@ wget -N -P /opt/cni/bin https://github.com/projectcalico/cni-plugin/releases/dow
 wget -N -P /opt/cni/bin https://github.com/projectcalico/cni-plugin/releases/download/{{site.data.versions[page.version].first.components["calico/cni"].version}}/calico-ipam
 chmod +x /opt/cni/bin/calico /opt/cni/bin/calico-ipam
 ```
-{% endif %}
+{% end %}
 
 The {{site.prodname}} CNI plugins require a standard CNI config file.  The `policy` section is only required when
 running the `calico/kube-controllers` container .

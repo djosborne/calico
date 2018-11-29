@@ -4,5 +4,5 @@ layout: null
 {% helm %} 
 datastore: "etcd"
 network: "calico"
-calico_ipam: "true"
+calico_ipam: true
 {% endhelm %}

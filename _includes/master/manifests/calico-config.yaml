@@ -17,7 +17,7 @@ metadata:
   name: {{.Values.variant_name | lower}}-config
   namespace: kube-system
 data:
-{%- if include.datastore == "etcd" %}
+{{- if eq .Values.datastore "etcd" -}}
   # Configure this with the location of your etcd cluster.
   etcd_endpoints: "http://10.96.232.136:6666"
 
@@ -27,20 +27,20 @@ data:
   etcd_cert: "" # "/calico-secrets/etcd-cert"
   etcd_key: ""  # "/calico-secrets/etcd-key"
 
-{%- elsif include.datastore == "kdd" and include.typha == "true" %}
+{{- else if and (eq .Values.datastore "kdd") .Values.typha.enabled -}}
   # To enable Typha, set this to "calico-typha" *and* set a non-zero value for Typha replicas
   # below.  We recommend using Typha if you have more than 50 nodes. Above 100 nodes it is
   # essential.
   typha_service_name: "none"
 
-{%- endif %}
-{%- if include.network == "calico" %}
+{{- end }}
+{{- if eq .Values.network "calico" -}}
   # Configure the {{ .Values.prodname }} backend to use.
   calico_backend: "bird"
 
   # Configure the MTU to use
   veth_mtu: "1440"
-{%- elsif include.network == "flannel" %}
+{{- else if eq .Values.network "flannel" -}}
   # The interface used by canal for host <-> host communication.
   # If left blank, then the interface is chosen using the node's
   # default route.
@@ -49,11 +49,11 @@ data:
   # Whether or not to masquerade traffic to destinations not within
   # the pod network.
   masquerade: "true"
-{%- endif %}
+{{- end }}
 
   # The CNI network configuration to install on each node.  The special
   # values in this config will be automatically populated.
-{%- if include.datastore == "etcd"  and include.network == "flannel" %}
+{{- if and (eq .Values.datastore "etcd") (eq .Values.network "flannel") -}}
   cni_network_config: |-
     {
         "name": "canal",
@@ -86,7 +86,7 @@ data:
             }
         ]
     }
-{%- else %}
+{{- else }}
   cni_network_config: |-
     {
       "name": "k8s-pod-network",
@@ -95,30 +95,30 @@ data:
         {
           "type": "calico",
           "log_level": "info",
-  {%- if include.datastore == "etcd" %}
+  {{- if eq .Values.datastore "etcd" -}}
           "etcd_endpoints": "__ETCD_ENDPOINTS__",
           "etcd_key_file": "__ETCD_KEY_FILE__",
           "etcd_cert_file": "__ETCD_CERT_FILE__",
           "etcd_ca_cert_file": "__ETCD_CA_CERT_FILE__",
-  {%- elsif include.datastore == "kdd" %}
+  {{- else if eq .Values.datastore "kdd" -}}
           "datastore_type": "kubernetes",
           "nodename": "__KUBERNETES_NODE_NAME__",
-  {%- endif %}
-  {%- if include.network == "calico" %}
+  {{- end }}
+  {{- if eq .Values.network "calico" -}}
           "mtu": __CNI_MTU__,
-  {%- elsif include.network == null %}
+  {{- else if eq .Values.network nil }}
           "mtu": 1500,
-  {%- endif %}
-  {%- if include.calico_ipam == "true" %}
+  {{- end }}
+  {{- if .Values.calico_ipam -}}
           "ipam": {
               "type": "calico-ipam"
           },
-  {%- else %}
+  {{- else }}
           "ipam": {
             "type": "host-local",
             "subnet": "usePodCidr"
           },
-  {%- endif %}
+  {{- end }}
           "policy": {
               "type": "k8s"
           },
@@ -133,8 +133,8 @@ data:
         }
       ]
     }
-{%- endif %}
-{%- if include.network == "flannel" and include.datastore == "kdd" %}
+{{- end }}
+{{- if and (eq .Values.network "flannel") (eq .Values.datastore "kdd") -}}
 
   # Flannel network configuration. Mounted into the flannel container.
   net-conf.json: |
@@ -144,4 +144,4 @@ data:
         "Type": "vxlan"
       }
     }
-{%- endif %}
+{{- end }}
