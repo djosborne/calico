@@ -1,0 +1,37 @@
+node:
+  image: quay.io/calico/node
+  tag: v3.2.3
+cni:
+  image: quay.io/calico/cni
+  tag: v3.2.3
+ctl:
+  image: quay.io/calico/ctl
+  tag: v3.2.3
+kubeControllers:
+  image: quay.io/calico/kube-controllers
+  tag: v3.2.3
+flexVol:
+  image: quay.io/calico/pod2daemon-flexvol
+  tag: v3.3.1
+typha:
+  enabled: true
+  image: quay.io/calico/typha
+  tag: v3.3.1
+flannel:
+  tag: v0.9.1
+  image: quay.io/coreos/flannel
+dikastes:
+  tag: v3.3.1
+  image: quay.io/calico/dikastes
+
+# Core settings don't get defaults 
+# network: calico
+# datastore: "etcd"
+# calico_ipam: true
+
+prodname: Calico
+nodecontainer: calico/node
+noderunning: calico-node
+variant_name: Calico
+app_layer_policy: 
+  enabled: false
