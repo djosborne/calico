@@ -1,0 +1,38 @@
+[prune]
+  go-tests = true
+  unused-packages = true
+
+# K8s Pins
+[[constraint]]
+  name = "k8s.io/client-go"
+  branch = "release-7.0"
+
+[[override]]
+  name = "k8s.io/apimachinery"
+  branch = "release-1.10"
+
+[[override]]
+  name = "github.com/docker/docker"
+  branch = "master"
+
+[[override]]
+  name = "github.com/docker/distribution"
+  branch = "master"
+
+# k8s.io/kubernetes and it's overrides
+# See above for the 'blackfriday' pin as well.
+[[constraint]]
+  name = "k8s.io/kubernetes"
+  branch = "release-1.10"
+
+[[constraint]]
+  name = "k8s.io/api"
+  branch = "release-1.10"
+
+[[override]]
+  name = "k8s.io/apiserver"
+  branch = "release-1.10"
+
+[[override]]
+  source = "https://github.com/fsnotify/fsnotify/archive/v1.4.7.tar.gz"
+  name = "gopkg.in/fsnotify.v1"
