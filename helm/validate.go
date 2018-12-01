@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"k8s.io/api/core/v1"
+
+	//"k8s.io/api/core/v1"
+	//"k8s.io/api/extensions/v1beta1"
 	"log"
 	"os"
 	"os/exec"
@@ -67,8 +70,8 @@ func run() error {
 	dec := yaml.NewYAMLOrJSONDecoder(&stdout, 2048)
 	//dec := yaml.NewDecoder(&stdout)
 	for {
-		var obji interface{}
-		err := dec.Decode(&obji)
+		var emptyI interface{}
+		err := dec.Decode(&emptyI)
 		if err != nil {
 			if err == io.EOF {
 				log.Print("finished parsing yaml")
@@ -78,8 +81,8 @@ func run() error {
 			}
 		}
 
-		// first, convert into a 'generic' so we can figure out what type it is
-		obj := obji.(generic)
+		obj := emptyI.(generic)
+
 		if obj["metadata"] == nil {
 			log.Print("object has no 'metadata' field. Likely an empty yaml block. Skipping")
 			continue
@@ -88,7 +91,8 @@ func run() error {
 		identifier := fmt.Sprintf("%s/%s:%s", obj["apiVersion"], obj["kind"], metaData["name"])
 		switch identifier {
 		case "v1/Secret:calico-etcd-secrets":
-			calicoEtcdSecrets = obji.(v1.Secret)
+			fmt.Println("found it")
+			calicoEtcdSecrets = emptyI.(v1.Secret)
 		case "v1/ConfigMap:calico-config":
 		case "apiextensions.k8s.io/v1beta1/CustomResourceDefinition:bgpconfigurations.crd.projectcalico.org":
 		case "apiextensions.k8s.io/v1beta1/CustomResourceDefinition:ippools.crd.projectcalico.org":
@@ -109,7 +113,6 @@ func run() error {
 		}
 	}
 
-	fmt.Println(calicoEtcdSecrets.Name)
-
+	fmt.Println(calicoEtcdSecrets.ObjectMeta.Name)
 	return nil
 }
