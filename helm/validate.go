@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -25,7 +26,19 @@ func run() error {
 	//ipPool: 192.168.0.0/16`
 
 	const chartPath= "../_includes/master/charts/calico"
-	cmd := exec.Command("helm", "template", "--set", "network=calico", "--set", "datastore=etcd", chartPath)
+	f, err := ioutil.TempFile("", "helmfv")
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString(`datastore: kubernetes
+network: calico`)
+	if err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	cmd := exec.Command("helm", "template", "-f", f.Name(), chartPath)
 
 	var (
 		stdout bytes.Buffer
@@ -38,6 +51,8 @@ func run() error {
 		fmt.Println(stderr.String())
 		return err
 	}
+
+	os.Remove(f.Name())
 
 	var (
 		calicoEtcdSecrets v1.Secret
