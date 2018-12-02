@@ -1,4 +1,4 @@
-package main
+package main_test
 
 import (
 	"bytes"
@@ -8,35 +8,58 @@ import (
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"log"
+	"testing"
 
 	"os"
 	"os/exec"
 )
 
-func main() {
-	if err := run(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+func TestIt(t *testing.T) {
+	r, err := run(`datastore: kubernetes
+network: calico`)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if r.calicoNode.Name != "calico-node" {
+		t.Fail()
 	}
 }
 
-func run() error {
-	//	helmInput := `
-	//datastore: kubernetes
-	//ipPool: 192.168.0.0/16`
+type AllResources struct{
+	calicoEtcdSecrets v1.Secret
+	calicoConfig v1.ConfigMap
+	calicoNode v1beta1.DaemonSet
+	calicoNodeServiceAccount v1.ServiceAccount
+	calicoKubeControllers v1beta1.Deployment
+	kubeControllersSA v1.ServiceAccount
 
-	const chartPath= "../_includes/master/charts/calico"
+	////bgpconfigurations.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
+	////ippools.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
+	////hostendpoints.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
+	////clusterinformations.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
+	////globalnetworkpolicies.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
+	////globalnetworksets.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
+	////networkpolicies.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
+	////calico-kube-controllers rbac.authorization.k8s.io/v1beta1/ClusterRole
+	////calico-kube-controllers rbac.authorization.k8s.io/v1beta1/ClusterRoleBinding
+	////calico-node rbac.authorization.k8s.io/v1beta1/ClusterRole
+	////calico-node rbac.authorization.k8s.io/v1beta1/ClusterRoleBinding
+	//	configureCanal v1.Job
+}
+
+func run(valuesyml string) (AllResources, error) {
+	const chartPath = "../_includes/master/charts/calico"
 	f, err := ioutil.TempFile("", "helmfv")
 	if err != nil {
-		return err
+		return AllResources{}, err
 	}
-	_, err = f.WriteString(`datastore: kubernetes
-network: calico`)
+	_, err = f.WriteString(valuesyml)
 	if err != nil {
-		return err
+		return AllResources{}, err
 	}
 	if err := f.Close(); err != nil {
-		return err
+		return AllResources{}, err
 	}
 	cmd := exec.Command("helm", "template", "-f", f.Name(), chartPath)
 
@@ -49,32 +72,13 @@ network: calico`)
 
 	if err := cmd.Run(); err != nil {
 		fmt.Println(stderr.String())
-		return err
+		return AllResources{}, err
 	}
 
 	os.Remove(f.Name())
 
-	var (
-		calicoEtcdSecrets v1.Secret
-		calicoConfig v1.ConfigMap
-		calicoNode v1beta1.DaemonSet
-		calicoNodeServiceAccount v1.ServiceAccount
-		calicoKubeControllers v1beta1.Deployment
-		kubeControllersSA v1.ServiceAccount
+	var r AllResources
 
-		////bgpconfigurations.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
-		////ippools.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
-		////hostendpoints.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
-		////clusterinformations.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
-		////globalnetworkpolicies.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
-		////globalnetworksets.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
-		////networkpolicies.crd.projectcalico.org apiextensions.k8s.io/v1beta1/CustomResourceDefinition
-		////calico-kube-controllers rbac.authorization.k8s.io/v1beta1/ClusterRole
-		////calico-kube-controllers rbac.authorization.k8s.io/v1beta1/ClusterRoleBinding
-		////calico-node rbac.authorization.k8s.io/v1beta1/ClusterRole
-		////calico-node rbac.authorization.k8s.io/v1beta1/ClusterRoleBinding
-		//	configureCanal v1.Job
-	)
 
 	// there's gotta be a more efficient way to do this but f it
 	byteObjs := bytes.Split(stdout.Bytes(), []byte("---"))
@@ -90,21 +94,21 @@ network: calico`)
 		switch o := obj.(type) {
 
 		case *v1.Secret:
-			calicoEtcdSecrets = *o
+			r.calicoEtcdSecrets = *o
 		case *v1.ConfigMap:
-			calicoConfig = *o
+			r.calicoConfig = *o
 		case *v1beta1.DaemonSet:
-			calicoNode  = *o
+			r.calicoNode  = *o
 		case *v1.ServiceAccount:
 			if o.ObjectMeta.Name == "calico-kube-controllers" {
-				kubeControllersSA = *o
+				r.kubeControllersSA = *o
 			} else if o.ObjectMeta.Name == "calico-node" {
-				calicoNodeServiceAccount = *o
+				r.calicoNodeServiceAccount = *o
 			} else {
-				return fmt.Errorf("unexpected service account: %s", o.ObjectMeta.Name)
+				return r, fmt.Errorf("unexpected service account: %s", o.ObjectMeta.Name)
 			}
 		case *v1beta1.Deployment:
-			calicoKubeControllers = *o
+			r.calicoKubeControllers = *o
 		}
 		//case "apiextensions.k8s.io/v1beta1/CustomResourceDefinition:bgpconfigurations.crd.projectcalico.org":
 		//case "apiextensions.k8s.io/v1beta1/CustomResourceDefinition:ippools.crd.projectcalico.org":
@@ -120,12 +124,5 @@ network: calico`)
 		//case "batch/v1/Job:configure-canal":
 	}
 
-	fmt.Println(calicoEtcdSecrets.ObjectMeta.Name)
-	fmt.Println(calicoConfig.ObjectMeta.Name)
-	fmt.Println(calicoNode.ObjectMeta.Name)
-	fmt.Println(kubeControllersSA.ObjectMeta.Name)
-	fmt.Println(calicoNodeServiceAccount.ObjectMeta.Name)
-	fmt.Println(calicoKubeControllers.ObjectMeta.Name)
-
-	return nil
+	return r, nil
 }
