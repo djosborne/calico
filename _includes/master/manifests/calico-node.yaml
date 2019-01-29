@@ -10,21 +10,20 @@ calico-node.yaml acccepts the following include flags:
 | app_layer_policy | true, false              |
 
 */ -}}
-{% capture include "nodeName" .  %}{% if .Values.network == "flannel" and .Values.datastore == "etcd" %}canal-node{% elsif .Values.network == "flannel" %}canal{% else %}calico-node{{ end }}{% endcapture -%}
 # This manifest installs the {{.Values.nodecontainer}} container, as well
 # as the {{.Values.prodname}} CNI plugins and network config on
 # each master and worker node in a Kubernetes cluster.
 kind: DaemonSet
 apiVersion: extensions/v1beta1
 metadata:
-  name: {{include "nodeName" . }}
+  name: {{include "calico.nodeName" . }}
   namespace: kube-system
   labels:
-    k8s-app: {{include "nodeName" . }}
+    k8s-app: {{include "calico.nodeName" . }}
 spec:
   selector:
     matchLabels:
-      k8s-app: {{include "nodeName" . }}
+      k8s-app: {{include "calico.nodeName" . }}
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -32,7 +31,7 @@ spec:
   template:
     metadata:
       labels:
-        k8s-app: {{include "nodeName" . }}
+        k8s-app: {{include "calico.nodeName" . }}
       annotations:
         # This, along with the CriticalAddonsOnly toleration below,
         # marks the pod as a critical add-on, ensuring it gets
@@ -44,7 +43,7 @@ spec:
         beta.kubernetes.io/os: linux
       hostNetwork: true
       tolerations:
-        # Make sure {{include "nodeName" . }} gets scheduled on all nodes.
+        # Make sure {{include "calico.nodeName" . }} gets scheduled on all nodes.
         - effect: NoSchedule
           operator: Exists
         # Mark the pod as a critical add-on for rescheduling.
@@ -52,7 +51,7 @@ spec:
           operator: Exists
         - effect: NoExecute
           operator: Exists
-      serviceAccountName: {{include "nodeName" . }}
+      serviceAccountName: {{include "calico.nodeName" . }}
       # Minimize downtime during a rolling upgrade or deletion; tell Kubernetes to do a "force
       # deletion": https://kubernetes.io/docs/concepts/workloads/pods/pod/#termination-of-pods.
       terminationGracePeriodSeconds: 0
@@ -442,7 +441,7 @@ spec:
         - name: flannel-cfg
           configMap:
             name: canal-config
-{%- elsif .Values.network == "flannel" and .Values.datastore == "etcd" %}
+{{- else if and (eq .Values.network "flannel") (eq .Values.datastore "etcd") }}
         # Used by flannel.
         - name: run-flannel
           hostPath:
@@ -483,7 +482,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{include "nodeName" . }}
+  name: {{include "calico.nodeName" . }}
   namespace: kube-system
 
 {{- if and (eq .Values.datastore "etcd") (eq .Values.network "flannel") }}
