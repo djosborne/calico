@@ -1,23 +1,23 @@
 calicoctl:
-  image: calicoctl
-  tag: v2.2.3
+  image: quay.io/calico/calicoctl
+  tag: master
 node:
-  image: cnx-node
-  tag: v2.2.3
+  image: quay.io/calico/node
+  tag: master
 kubeControllers:
-  image: kube-controllers
-  tag: v2.2.3
+  image: quay.io/calico/kube-controllers
+  tag: master
 cni:
-  image: calico/cni
-  tag: v3.2.4
+  image: quay.io/calico/cni
+  tag: master
 flannel:
-  tag: v0.9.1
+  tag: master
   image: coreos/flannel
 typha:
   enabled: false
-  image: calico/typha
-  tag: v3.3.1
-flexVol:
+  image: quay.io/calico/typha
+  tag: master
+flexvol:
   image: calico/pod2daemon-flexvol
   tag: v3.3.1
 
