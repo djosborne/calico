@@ -1,0 +1,32 @@
+calicoctl:
+  image: calicoctl
+  tag: v2.2.3
+node:
+  image: cnx-node
+  tag: v2.2.3
+kubeControllers:
+  image: kube-controllers
+  tag: v2.2.3
+cni:
+  image: calico/cni
+  tag: v3.2.4
+flannel:
+  tag: v0.9.1
+  image: coreos/flannel
+typha:
+  enabled: false
+  image: calico/typha
+  tag: v3.3.1
+flexVol:
+  image: calico/pod2daemon-flexvol
+  tag: v3.3.1
+
+network: calico
+datastore: "etcd"
+calico_ipam: true
+prodname: Calico
+nodecontainer: calico/node
+variant_name: Calico
+app_layer_policy: false
+orch: ""
+federation: "false"
