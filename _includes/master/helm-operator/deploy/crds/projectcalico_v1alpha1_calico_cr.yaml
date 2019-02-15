@@ -1,0 +1,7 @@
+apiVersion: projectcalico.org/v1alpha1
+kind: Calico
+metadata:
+  name: example-calico
+spec:
+  datastore: kdd
+  
