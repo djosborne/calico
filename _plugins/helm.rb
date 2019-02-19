@@ -1,6 +1,7 @@
 require "jekyll"
 require "tempfile"
 require "yaml"
+require "open3"
 
 # This plugin enables jekyll to render helm charts.
 # Traditionally, Jekyll will render files which make use of the Liquid templating language.
@@ -43,16 +44,18 @@ module Jekyll
       # Here we execute helm. In order to preserve backwards compatibility with the existing template system,
       # we pass the entire versions.yml and config.yml. Our chart templates use the passed in "version" to parse
       # out the correct image tags accordingly.
-      out = `helm template _includes/#{version}/charts/calico \
+      puts "hiya"
+      stdout, stderr, status = Open3.capture3("""helm template _includes/#{version}/charts/calico \
         --set page.version=#{version} \
         --set imageRegistry=#{imageRegistry} \
         -f _config.yml \
         -f #{tv.path} \
-        -f #{t.path}`
+        -f #{t.path}""")
       
       t.unlink
       tv.unlink
-      return out
+      puts stderr
+      return stdout
     end
   end
 end
