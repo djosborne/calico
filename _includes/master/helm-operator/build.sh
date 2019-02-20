@@ -1,2 +1,2 @@
 #!/bin/bash
-docker build -t calico/network-operator -f Dockerfile ../
+docker build -t gcr.io/tigera-dev/experimental/turk/calico-operator -f Dockerfile ../
