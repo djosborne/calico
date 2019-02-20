@@ -1,2 +1,2 @@
 #!/bin/bash
-docker build -t ozdanborne/calico-operator -f Dockerfile ../
+docker build -t calico/network-operator -f Dockerfile ../

@@ -1,4 +1,49 @@
+datastore: kdd
 typha:
   enabled: false
 network: "none"
 calico_ipam: false
+imageRegistry: ""
+page.version: master
+calico/node:
+  version: v3.5.1
+  url: https://github.com/projectcalico/node/releases/tag/v3.5.1
+calicoctl:
+  version: v3.5.1
+  url: https://github.com/projectcalico/calicoctl/releases/tag/v3.5.1
+calico/cni:
+  version: v3.5.1
+  url: https://github.com/projectcalico/cni-plugin/releases/tag/v3.5.1
+calico/kube-controllers:
+  version: v3.5.1
+  url: https://github.com/projectcalico/k8s-policy/releases/tag/v3.5.1
+networking-calico:
+  version: v3.4.0
+  url: http://git.openstack.org/cgit/openstack/networking-calico/commit/?h=3.4.0
+typha:
+  version: v3.5.1
+  url: https://github.com/projectcalico/typha/releases/tag/v3.5.1
+flannel:
+  version: v0.9.1
+calico/dikastes:
+  version: v3.5.1
+  url: https://github.com/projectcalico/app-policy/releases/tag/v3.5.1
+flexvol:
+  version: v3.5.1
+  url: https://github.com/projectcalico/pod2daemon/releases/tag/v3.5.1
+prodname: Calico
+nodecontainer: calico/node
+noderunning: calico-node
+
+# Image names in case the host changes
+imageNames:
+  node: calico/node
+  calicoctl: calico/ctl
+  typha: calico/typha
+  cni: calico/cni
+  kubeControllers: calico/kube-controllers
+  calico-upgrade: calico/upgrade
+  flannel: coreos/flannel
+  dikastes: calico/dikastes
+  pilot-webhook: calico/pilot-webhook
+  flexvol: calico/pod2daemon-flexvol
