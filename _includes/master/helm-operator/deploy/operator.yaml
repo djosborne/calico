@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: calico-operator
+  namespace: kube-system
 spec:
   replicas: 1
   selector:
@@ -24,8 +25,6 @@ spec:
           imagePullPolicy: Never
           env:
             - name: WATCH_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
+              value: ""
             - name: OPERATOR_NAME
               value: "calico-operator"
