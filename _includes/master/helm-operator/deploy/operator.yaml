@@ -25,11 +25,11 @@ spec:
       containers:
         - name: calico-operator
           # Replace this with the built image name
-          image: calico/network-operator
+          image: gcr.io/tigera-dev/experimental/turk/calico-operator
           ports:
           - containerPort: 60000
             name: metrics
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           env:
             - name: WATCH_NAMESPACE
               value: ""
