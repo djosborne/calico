@@ -65,7 +65,7 @@ clean:
 # CI / test targets
 ###############################################################################
 
-ci: htmlproofer kubeval
+ci: htmlproofer kubeval helm-tests
 
 htmlproofer: _site
 	docker run -ti -e JEKYLL_UID=`id -u` --rm -v $(PWD)/_site:/_site/ quay.io/calico/htmlproofer:$(HP_VERSION) /_site --assume-extension --check-html --empty-alt-ignore --file-ignore $(HP_IGNORE_LOCAL_DIRS) --internal_domains "docs.projectcalico.org" --disable_external --allow-hash-href
@@ -82,6 +82,21 @@ kubeval: _site
 	-rm stderr.out
 	! grep -C3 -P "invalid|\t\*" filtered.out
 	rm filtered.out
+
+PACKAGE_NAME?=github.com/projectcalico/calico
+helm-tests: vendor bin/helm values.yaml
+ifndef RELEASE_STREAM
+	# Default the version to master if not set
+	$(eval RELEASE_STREAM = master)
+endif
+	mkdir -p .go-pkg-cache && \
+		docker run --rm \
+		--net=host \
+		-v $$(pwd):/go/src/$(PACKAGE_NAME):rw \
+		-v $$(pwd)/.go-pkg-cache:/go/pkg:rw \
+		-v $$(pwd)/bin/helm:/usr/local/bin/helm \
+		-w /go/src/$(PACKAGE_NAME) \
+		$(CALICO_BUILD) ginkgo -cover -r -skipPackage vendor ./helm-tests -chart-path=../_includes/$(RELEASE_STREAM)/charts/calico $(GINKGO_ARGS)
 
 ###############################################################################
 # Docs automation
@@ -288,15 +303,28 @@ bin/helm:
 	tar -zxvf $(TMP)/$(HELM_RELEASE) -C $(TMP)
 	mv $(TMP)/linux-amd64/helm bin/helm
 
+bin/dep:
+	mkdir -p bin
+	curl -L https://github.com/golang/dep/releases/download/v0.5.0/dep-linux-amd64 > bin/dep
+	chmod +x bin/dep
+
+
 .PHONY: values.yaml
 values.yaml:
 ifndef RELEASE_STREAM
-	$(error RELEASE_STREAM is undefined - run using make values.yaml RELEASE_STREAM=vX.Y)
+	# Default the version to master if not set
+	$(eval RELEASE_STREAM = master)
 endif
 	docker run --rm \
 	  -v $$PWD:/calico \
 	  -w /calico \
 	  ruby:2.5 ruby ./hack/gen_values_yml.rb $(RELEASE_STREAM) > _includes/$(RELEASE_STREAM)/charts/calico/values.yaml
+
+vendor: bin/dep
+	docker run -w /go/src/helm \
+		-v $$(pwd)/bin/dep:/usr/local/bin/dep \
+		-v $$(pwd):/go/src/helm golang:1.11-stretch \
+		dep ensure -v
 
 .PHONY: help
 ## Display this help text
