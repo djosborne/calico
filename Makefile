@@ -8,6 +8,11 @@ ifeq ($(DEV),true)
 	CONFIG:=$(CONFIG),_config_dev.yml
 endif
 
+GO_BUILD_VER?=v0.20
+CALICO_BUILD?=calico/go-build:$(GO_BUILD_VER)
+LOCAL_USER_ID?=$(shell id -u $$USER)
+PACKAGE_NAME?=github.com/projectcalico/node
+
 # Determine whether there's a local yaml installed or use dockerized version.
 # Note in order to install local (faster) yaml: "go get github.com/mikefarah/yaml"
 YAML_CMD:=$(shell which yaml || echo docker run --rm -i calico/yaml)
@@ -303,12 +308,6 @@ bin/helm:
 	tar -zxvf $(TMP)/$(HELM_RELEASE) -C $(TMP)
 	mv $(TMP)/linux-amd64/helm bin/helm
 
-bin/dep:
-	mkdir -p bin
-	curl -L https://github.com/golang/dep/releases/download/v0.5.0/dep-linux-amd64 > bin/dep
-	chmod +x bin/dep
-
-
 .PHONY: values.yaml
 values.yaml:
 ifndef RELEASE_STREAM
@@ -320,11 +319,17 @@ endif
 	  -w /calico \
 	  ruby:2.5 ruby ./hack/gen_values_yml.rb $(RELEASE_STREAM) > _includes/$(RELEASE_STREAM)/charts/calico/values.yaml
 
-vendor: bin/dep
-	docker run -w /go/src/helm \
-		-v $$(pwd)/bin/dep:/usr/local/bin/dep \
-		-v $$(pwd):/go/src/helm golang:1.11-stretch \
-		dep ensure -v
+## Create the vendor directory
+vendor: glide.yaml
+	# Ensure that the glide cache directory exists.
+	mkdir -p $(HOME)/.glide
+
+	docker run --rm -i \
+	  -v $(CURDIR):/go/src/$(PACKAGE_NAME):rw \
+	  -v $(HOME)/.glide:/home/user/.glide:rw \
+	  -e LOCAL_USER_ID=$(LOCAL_USER_ID) \
+	  -w /go/src/$(PACKAGE_NAME) \
+	  $(CALICO_BUILD) glide install -strip-vendor
 
 .PHONY: help
 ## Display this help text

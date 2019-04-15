@@ -1,0 +1,8 @@
+package: github.com/projectcalico/calico
+import:
+- package: k8s.io/api
+  version: release-1.10
+- package: k8s.io/client-go
+  version: release-7.0
+- package: k8s.io/apimachinery
+  version: d49e237a2683fa6dc43a86c7b1b766e0219fb6e7
