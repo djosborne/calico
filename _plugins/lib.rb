@@ -1,5 +1,25 @@
 def gen_values(versions, imageNames, imageRegistry)
     versionsYml = <<~EOF
+    # Select which datastore mode. Can be 'etcd' or 'kdd'.
+    # Note: Changing this after installation is not supported.
+    datastore: kdd
+
+    # Config for etcd
+    etcd:
+      # Endpoints for the etcd instances. This can be a comma separated list of endpoints.
+      endpoints: null
+      # Authentication information for accessing secure etcd instances.
+      tls:
+        crt: null
+        ca: null
+        key: null
+
+    # Sets the networking mode. Can be 'calico', 'flannel', or 'none'
+    network: calico
+
+    calico_ipam: true
+    app_layer_policy: false
+
     node:
       image: #{imageRegistry}#{imageNames["node"]}
       tag: #{versions["calico/node"]}

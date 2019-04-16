@@ -16,3 +16,5 @@ bin
 # the helm templates directory, since (for now) we should be
 # using a symlink.
 _includes/*/charts/calico/templates/*
+
+values.yaml
