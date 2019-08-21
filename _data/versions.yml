@@ -5,17 +5,17 @@ v3.8:
       version: v3.8.2
      calicoctl:
       version: v3.8.2
-     calico/node:
+     node:
       version: v3.8.2
-     calico/cni:
+     cni:
       version: v3.8.2
-     calico/kube-controllers:
+     kubeControllers:
       version: v3.8.2
      networking-calico:
       version: 3.8.0
      flannel:
       version: v0.11.0
-     calico/dikastes:
+     dikastes:
       version: v3.8.2
      flexvol:
       version: v3.8.2
@@ -2835,17 +2835,17 @@ master:
       version: master
      calicoctl:
       version: master
-     calico/node:
+     node:
       version: master
-     calico/cni:
+     cni:
       version: master
-     calico/kube-controllers:
+     kubeControllers:
       version: master
      networking-calico:
       version: master
      flannel:
       version: v0.11.0
-     calico/dikastes:
+     dikastes:
       version: master
      flexvol:
       version: master

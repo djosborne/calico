@@ -1,32 +1,39 @@
+{%- comment -%}This if statement maintains backwards compatability for the old way of calling this include{%- endcomment -%}
+{%- if include.release -%}
+    {%- assign version = include.release.components[include.component].version -%}
+{%- else -%}
+    {%- assign version = include.version -%}
+{%- endif -%}
+
 {%- if release.title != "master" -%}
 {%- case include.component -%}
 
-{%- when 'calico/node' -%}
-https://github.com/projectcalico/node/releases/tag/{{ release.components[include.component].version }}
+{%- when 'node' -%}
+https://github.com/projectcalico/node/releases/tag/{{ version }}
 
 {%- when 'calicoctl' -%}
-https://github.com/projectcalico/calicoctl/releases/tag/{{ release.components[include.component].version }}
+https://github.com/projectcalico/calicoctl/releases/tag/{{ version }}
 
-{%- when 'calico/cni' -%}
-https://github.com/projectcalico/cni-plugin/releases/tag/{{ release.components[include.component].version }}
+{%- when 'cni' -%}
+https://github.com/projectcalico/cni-plugin/releases/tag/{{ version }}
 
-{%- when 'calico/kube-controllers' -%}
-https://github.com/projectcalico/k8s-policy/releases/tag/{{ release.components[include.component].version }}
+{%- when 'kubeControllers' -%}
+https://github.com/projectcalico/k8s-policy/releases/tag/{{ version }}
 
 {%- when 'networking-calico' -%}
-https://opendev.org/openstack/networking-calico/src/tag/{{ release.components[include.component].version }}
+https://opendev.org/openstack/networking-calico/src/tag/{{ version }}
 
 {%- when 'typha' -%}
-https://github.com/projectcalico/typha/releases/tag/{{ release.components[include.component].version }}
+https://github.com/projectcalico/typha/releases/tag/{{ version }}
 
 {%- when 'flannel' -%}
-https://github.com/coreos/flannel/releases/tag/{{ release.components[include.component].version }}
+https://github.com/coreos/flannel/releases/tag/{{ version }}
 
-{%- when 'calico/dikastes' -%}
-https://github.com/projectcalico/app-policy/releases/tag/{{ release.components[include.component].version }}
+{%- when 'dikastes' -%}
+https://github.com/projectcalico/app-policy/releases/tag/{{ version }}
 
 {%- when 'flexvol' -%}
-https://github.com/projectcalico/pod2daemon/releases/tag/{{ release.components[include.component].version }}
+https://github.com/projectcalico/pod2daemon/releases/tag/{{ version }}
 
 {%- endcase -%}
 
