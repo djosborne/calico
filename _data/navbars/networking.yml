@@ -1,9 +1,7 @@
 bigheader: "Networking"
-path: /networking
+path: /networking/
 order: 2
-toc:
-- title: Networking
-  path: /networking/
+section:
 - title: Connecting workloads across networks that you do not control
   path: /networking/vxlan-ipip
 - title: Migrate from one IP pool to another
@@ -25,6 +23,7 @@ toc:
 - title: Assign IP addresses based on topology
   path: /networking/assign-ip-addresses-topology
 - title: Calico networking for OpenStack
+  path: /networking/openstack/
   section:
   - title: Setting up a development machine
     path:  /networking/openstack/dev-machine-setup
@@ -49,6 +48,7 @@ toc:
   - title: Calico's interpretation of Neutron API calls
     path: /networking/openstack/neutron-api
 - title: Network design
+  path: /networking/design/
   section:
     - title: Calico over Ethernet fabrics
       path: /networking/design/l2-interconnect-fabric
@@ -65,7 +65,7 @@ toc:
 - title: Get started with IP address management
   path: /networking/get-started-ip-addresses
 - title: Use IPVS kube-proxy
-  path: /networking/use-ipvs  
+  path: /networking/use-ipvs
 - title: Configure workload access outside cluster
   path: /networking/workloads-outside-cluster
 - title: Advertise Kubernetes service IP addresses
