@@ -36,7 +36,7 @@ These steps are detailed in this section.
 
 1.  Configure the {{site.prodname}} repository:
 
-    ```
+    ```bash
     cat > /etc/yum.repos.d/calico.repo <<EOF
     [calico]
     name=Calico Repository
@@ -47,6 +47,15 @@ These steps are detailed in this section.
     gpgkey=https://binaries.projectcalico.org/rpm/{{ ppa_repo_name }}/key
     priority=97
     EOF
+    ```
+
+1.  Edit `/etc/neutron/neutron.conf`.  Add a `[calico]` section with
+    the following content, where `<ip>` is the IP address of the etcd
+    server.
+
+    ```conf
+    [calico]
+    etcd_host = <ip>
     ```
 
 ## Control node install
@@ -67,19 +76,19 @@ On each control node, perform the following steps:
     > left around.
     {: .alert .alert-danger}
 
-1.  Edit the `/etc/neutron/neutron.conf` file. In the `[DEFAULT]` section, find
+1.  Edit `/etc/neutron/neutron.conf`. In the `[DEFAULT]` section, find
     the line beginning with `core_plugin`, and change it to read `core_plugin =
     calico`.  Also remove any existing setting for `service_plugins`.
 
 1.  Install the `calico-control` package:
 
-    ```
+    ```bash
     yum install -y calico-control
     ```
 
 1.  Restart the neutron server process:
 
-    ```
+    ```bash
     service neutron-server restart
     ```
 
@@ -90,7 +99,7 @@ On each compute node, perform the following steps:
 1.  Open `/etc/nova/nova.conf` and remove the line from the `[DEFAULT]`
     section that reads:
 
-    ```
+    ```conf
     linuxnet_interface_driver = nova.network.linux_net.LinuxOVSInterfaceDriver
     ```
 
@@ -101,26 +110,26 @@ On each compute node, perform the following steps:
 
     Restart nova compute.
 
-    ```
+    ```bash
     service openstack-nova-compute restart
     ```
 
     If this node is also a controller, additionally restart nova-api.
 
-    ```
+    ```bash
     service openstack-nova-api restart
     ```
 
 1.  If they're running, stop the Open vSwitch services.
 
-    ```
+    ```bash
     service neutron-openvswitch-agent stop
     service openvswitch stop
     ```
 
     Then, prevent the services running if you reboot.
 
-    ```
+    ```bash
     chkconfig openvswitch off
     chkconfig neutron-openvswitch-agent off
     ```
@@ -128,27 +137,27 @@ On each compute node, perform the following steps:
     Then, on your control node, run the following command to find the
     agents that you just stopped.
 
-    ```
+    ```bash
     neutron agent-list
     ```
 
     For each agent, delete them with the following command on your
     control node, replacing `<agent-id>` with the ID of the agent.
 
-    ```
+    ```bash
     neutron agent-delete <agent-id>
     ```
 
 1.  Install Neutron infrastructure code on the compute host.
 
-    ```
+    ```bash
     yum install -y openstack-neutron
     ```
 
-1.  Modify `/etc/neutron/neutron.conf`.  In the `[oslo_concurrency]` section,
+1.  Edit `/etc/neutron/neutron.conf`.  In the `[oslo_concurrency]` section,
     ensure that the `lock_path` variable is uncommented and set as follows.
 
-    ```
+    ```conf
     # Directory to use for lock files. For security, the specified directory should
     # only be writable by the user running the processes that need locking.
     # Defaults to environment variable OSLO_LOCK_PATH. If external locks are used,
@@ -157,19 +166,11 @@ On each compute node, perform the following steps:
     ```
     {: .no-select-button}
 
-    Add a `[calico]` section with the following content, where `<ip>` is the IP
-    address of the etcd server.
-
-    ```
-    [calico]
-    etcd_host = <ip>
-    ```
-
 1.  Stop and disable the Neutron DHCP agent, and install the
     {{site.prodname}} DHCP agent (which uses etcd, allowing it to scale to higher
     numbers of hosts).
 
-    ```
+    ```bash
     service neutron-dhcp-agent stop
     chkconfig neutron-dhcp-agent off
     yum install -y calico-dhcp-agent
@@ -179,7 +180,7 @@ On each compute node, perform the following steps:
     routing agent or the Linux bridging agent. These conflict
     with {{site.prodname}}.
 
-    ```
+    ```bash
     service neutron-l3-agent stop
     chkconfig neutron-l3-agent off
     ```
@@ -190,7 +191,7 @@ On each compute node, perform the following steps:
     Metadata API. This step is not required on combined compute and
     controller nodes.
 
-    ```
+    ```bash
     yum install -y openstack-nova-api
     service openstack-nova-metadata-api restart
     chkconfig openstack-nova-metadata-api on
@@ -198,13 +199,13 @@ On each compute node, perform the following steps:
 
 1.  Install the BIRD BGP client.
 
-    ```
+    ```bash
     yum install -y bird bird6
     ```
 
 1.  Install the `calico-compute` package.
 
-    ```
+    ```bash
     yum install -y calico-compute
     ```
 
@@ -216,13 +217,13 @@ On each compute node, perform the following steps:
 
     For IPv4 connectivity between compute hosts:
 
-    ```
+    ```bash
     calico-gen-bird-conf.sh <compute_node_ip> <route_reflector_ip> <bgp_as_number>
     ```
 
     And/or for IPv6 connectivity between compute hosts:
 
-    ```
+    ```bash
     calico-gen-bird6-conf.sh <compute_node_ipv4> <compute_node_ipv6> <route_reflector_ipv6> <bgp_as_number>
     ```
 
@@ -248,7 +249,7 @@ On each compute node, perform the following steps:
     Ensure that BIRD (and/or BIRD 6 for IPv6) is running and starts on
     reboot.
 
-    ```
+    ```bash
     service bird restart
     service bird6 restart
     chkconfig bird on
@@ -258,7 +259,7 @@ On each compute node, perform the following steps:
 1.  Create `/etc/calico/felix.cfg` with the following content, where `<ip>` is the IP
     address of the etcd server.
 
-    ```
+    ```conf
     [global]
     DatastoreType = etcdv3
     EtcdAddr = <ip>:2379
@@ -266,6 +267,8 @@ On each compute node, perform the following steps:
 
 1.  Restart the Felix service.
 
-    ```
+    ```bash
     service calico-felix restart
     ```
+
+{% include {{page.version}}/openstack-etcd-auth.md %}
