@@ -1,3 +1,6 @@
-apiVersion: v1
+apiVersion: v3
 name: tigera-operator
 description: Installs the Tigera operator for Calico
+
+# version required for templating
+version: v0.0.0
